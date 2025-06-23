@@ -1,63 +1,54 @@
 use ash::vk::*;
 use log::info;
 
-pub struct PhysicalDevices {
-    pub phys_devices: Vec<PhysicalDevice>,
-    pub phys_prop: Vec<PhysicalDeviceProperties>,
-    pub mem_prop: Vec<PhysicalDeviceMemoryProperties>,
-    pub queue_family_prop: Vec<Vec<QueueFamilyProperties>>,
-    pub features: Vec<PhysicalDeviceFeatures>
+
+pub struct PhysicalDevice {
+    pub handle: ash::vk::PhysicalDevice,
+    pub phys_info: PhyscialDeviceInfo
 }
 
 #[derive(Default)]
-pub struct PhysicalDevicesBuilder {
-    phys_devices: Vec<PhysicalDevice>,
-    phys_prop: Vec<PhysicalDeviceProperties>,
-    mem_prop: Vec<PhysicalDeviceMemoryProperties>,
-    queue_family_prop: Vec<Vec<QueueFamilyProperties>>,
-    features: Vec<PhysicalDeviceFeatures>
+pub struct PhysicalDevicesBuilder;
+
+#[derive(Default, Clone)]
+pub struct PhyscialDeviceInfo {
+    pub phys_prop: PhysicalDeviceProperties,
+    pub memory_prop: PhysicalDeviceMemoryProperties,
+    pub queue_family_prop: Vec<QueueFamilyProperties>,
+    pub features: PhysicalDeviceFeatures,
+    pub extensions: Vec<ExtensionProperties>,
+    pub layers: Vec<LayerProperties>
 }
 
 impl PhysicalDevicesBuilder {
-    pub fn builder() -> Self {
+    pub fn new() -> Self {
         Self { ..Default::default() }
     }
 
-    pub fn build(self, inst: &ash::Instance) -> PhysicalDevices {
-        let phys_devs = unsafe { inst.enumerate_physical_devices().unwrap() };
-        let mut phys_prop = vec![];
-        let mut mem_prop= vec![];
-        let mut queue_family_prop = vec![];
-        let mut features = vec![];
+    pub fn phys_device_info(phys_dev: &ash::vk::PhysicalDevice, instance: &ash::Instance) -> PhyscialDeviceInfo {
+
+        let phys_dev = *phys_dev;
+
+        unsafe {
+            let extensions = instance.enumerate_device_extension_properties(phys_dev).expect("Error get extensions");
+            let layers = instance.enumerate_device_layer_properties(phys_dev).expect("Error get layer properties");
+            let features = instance.get_physical_device_features(phys_dev);
+            let memory_prop = instance.get_physical_device_memory_properties(phys_dev);
+            let queue_prop = instance.get_physical_device_queue_family_properties(phys_dev);
+            let phys_prop = instance.get_physical_device_properties(phys_dev);
+            PhyscialDeviceInfo{ phys_prop, memory_prop, queue_family_prop: queue_prop, features, extensions, layers }
+        }
+    }
+
+    pub fn build(self, instance: &ash::Instance) -> PhysicalDevice {
+
+        let phys_devs = unsafe { instance.enumerate_physical_devices().unwrap() };
+        let mut phys_info = vec![];
 
         for i in &phys_devs {
-            unsafe {
-                let prop = inst.get_physical_device_properties(*i);
-                phys_prop.push(prop);
-
-                let mem = inst.get_physical_device_memory_properties(*i);
-                mem_prop.push(mem);
-
-                info!("Устройство: {:?}", prop.device_name_as_c_str().unwrap());
-
-                let mut full_memory = 0;
-                for i in mem.memory_heaps {
-                    if i.size != 0 && i.flags.contains(MemoryHeapFlags::DEVICE_LOCAL) {
-                        //println!("Размер: {:?}, флаги: {:?}", i.size / (1024 * 1024), i.flags);
-                        full_memory += i.size / (1024 * 1024)
-                    }
-                }
-
-                info!("Видеопамяти: {} МБ", full_memory);
-
-                let feature = inst.get_physical_device_features(*i);
-                features.push(feature);
-
-                let queue_family = inst.get_physical_device_queue_family_properties(*i);
-                queue_family_prop.push(queue_family);
-            }
+            phys_info.push(Self::phys_device_info(i, &instance));
         }
 
-        PhysicalDevices { phys_devices: phys_devs, phys_prop, mem_prop, queue_family_prop, features }
+        PhysicalDevice { handle: phys_devs[0], phys_info: phys_info[0].clone() }
     }
 }

@@ -1,38 +1,41 @@
 
-
-use std::{error::Error, ffi::CStr};
-
-use ash::{self, vk::{ApplicationInfo, ExtensionProperties, InstanceCreateFlags, InstanceCreateInfo, LayerProperties}, Entry};
-
+use std::ffi::CStr;
+use ash::{Entry, vk::*};
 
 #[derive(Default)]
 pub struct InstanceBuilder<'n> {
-    entry: Option<Entry>,
-    instance: Option<ash::Instance>,
     app_info: Option<ApplicationInfo<'n>>,
     flags: Option<InstanceCreateFlags>,
     extensions: Vec<*const i8>,
     layers: Vec<*const i8>,
+    #[allow(dead_code)]
     alloc_callback: ()
 }
 
 pub struct Instance {
-    pub instance: ash::Instance,
-    pub entry: Entry,
+    pub handle: ash::Instance,
+    pub handle_entry: Entry,
 }
 
 impl<'n> InstanceBuilder<'n> {
-    pub fn builder() -> Self {
+    pub fn new() -> Self {
         Self { ..Default::default() }
     }
 
-    pub fn app_info(mut self, app_info: &ApplicationInfo<'n>) -> Self {
+    #[must_use]
+    pub fn with_app_info(mut self, app_info: &ApplicationInfo<'n>) -> Self {
         self.app_info = Some(*app_info);
         self
     }
 
+    #[allow(warnings)]
     pub fn add_extension(mut self, name: &'static CStr) -> Self {
         self.extensions.push(name.as_ptr());
+        self
+    }
+
+    pub fn add_extensions(mut self, names: Vec<&'static CStr>) -> Self {
+        self.extensions.extend(names.iter().map(|name| name.as_ptr()));
         self
     }
 
@@ -55,8 +58,8 @@ impl<'n> InstanceBuilder<'n> {
             .enabled_layer_names(&layers)
             .flags(flags);
 
-        let inst = unsafe { entry.create_instance(&create_info, None).unwrap() };
-        Instance { instance: inst, entry }
+        let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
+        Instance { handle: instance, handle_entry: entry }
     }
 
 }
@@ -67,4 +70,12 @@ pub fn load_instance_extension_props(entry: &Entry) -> Vec<ExtensionProperties> 
 
 pub fn load_instance_layer_props(entry: &Entry) -> Vec<LayerProperties> {
     unsafe { entry.enumerate_instance_layer_properties().unwrap() }
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        unsafe {
+            //self.handle.destroy_instance(None);
+        }
+    }
 }

@@ -1,9 +1,9 @@
 #![warn(unused_qualifications)]
 
-use std::{error::Error, fs::{write, File}, io::Read};
+use std::{error::Error, fs::{read_dir, write, DirEntry, File}, io::Read, process::Command};
 
 mod instance;
-use ash::vk::{CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, SurfaceTransformFlagsKHR, API_VERSION_1_2};
+use ash::vk::{CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, SurfaceTransformFlagsKHR, API_VERSION_1_2, API_VERSION_1_3};
 use instance::*;
 
 mod app;
@@ -18,8 +18,8 @@ use phys_device::*;
 mod surface;
 use surface::*;
 
-mod queue_family;
-use queue_family::*;
+mod queue;
+use queue::*;
 
 mod device;
 use device::*;
@@ -58,10 +58,10 @@ struct Vertex {
 
 fn draw_frame(
     device: &ash::Device,
-    queue: &Queue,
+    queue: &ash::vk::Queue,
     swapchain: &Swapchain,
     command_pool: &CommandPool,
-    pipeline: &ash::vk::Pipeline,
+    pipeline: &vk::Pipeline,
     render_pass: &RenderPass,
     framebuffers: &[vk::Framebuffer],
     image_available_semaphore: vk::Semaphore,
@@ -154,7 +154,7 @@ fn draw_frame(
 
     unsafe {
         device.queue_submit(
-            queue.queue,
+            *queue,
             &[submit_info],
             in_flight_fence,
         )?;
@@ -171,14 +171,9 @@ fn draw_frame(
         .image_indices(&binding3);
 
     unsafe {
-        swapchain.swapchain_load.queue_present(queue.queue, &present_info)?;
+        swapchain.swapchain_load.queue_present(*queue, &present_info)?;
         device.device_wait_idle()?;
     }
-
-    // unsafe {
-    //     device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
-    //     device.reset_fences(&[in_flight_fence])?;
-    // }
 
     Ok(())
 }
@@ -197,46 +192,48 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&main_loop)
         .unwrap();
 
-    let app = AppBuilder::builder()
-        .app_name(c"Bomb")
-        .engine_name(c"Fujiya")
-        .api_version(API_VERSION_1_2)
+    let app = AppBuilder::new()
+        .with_app_name(c"Bomb")
+        .with_engine_name(c"Fujiya")
+        .with_engine_verison(2025)
+        .with_api_version(API_VERSION_1_3)
         .build();
 
-    let inst = InstanceBuilder::builder()
-        .add_extension(c"VK_KHR_surface")
-        .add_extension(c"VK_KHR_win32_surface")
-        .add_extension(c"VK_EXT_debug_report")
-        .add_extension(c"VK_EXT_debug_utils")
+    let instance = InstanceBuilder::new()
+        .add_extensions(vec![
+            c"VK_EXT_debug_utils",
+            c"VK_EXT_debug_report",
+            c"VK_KHR_win32_surface",
+            c"VK_KHR_surface"
+        ])
         .add_layer(c"VK_LAYER_KHRONOS_validation")
-        .app_info(&app.app_info)
+        .with_app_info(&app.handle)
         .build();
 
-    let phys_dev = PhysicalDevicesBuilder::builder()
-        .build(&inst.instance);
+    let phys_dev = PhysicalDevicesBuilder::new()
+        .build(&instance.handle);
 
-    let surface = SurfaceBuilder::builder()
-        .entry(&inst.entry)
-        .instance(&inst.instance)
+    let surface = SurfaceBuilder::new()
+        .entry(&instance.handle_entry)
+        .instance(&instance.handle)
         .window(&window)
         .build();
 
-    let phys_ddev = &phys_dev.phys_devices[0];
+    let phys_ddev = &phys_dev.handle;
 
-    let queue_family = QueuesFamilyBuilder::builder()
-        .queue_family_prop(&phys_dev.queue_family_prop[0])
-        .phys_dev(phys_ddev)
+    let queue_family = QueuesFamilyBuilder::new()
+        .queue_family(&phys_dev.phys_info.queue_family_prop)
         .surface(&surface.surface)
         .surface_load(&surface.surface_load)
-        .build();
+        .build(phys_ddev);
 
-    let device = DeviceBuilder::builder()
-        .family_index(0)
-        .instance(&inst.instance)
-        .phys_dev(phys_ddev)
-        .build();
+    let device = DeviceBuilder::new()
+        .add_extension(c"VK_KHR_swapchain")
+        .queue_family(&queue_family)
+        .build(&instance.handle, phys_ddev)
+        .expect("Erorr create Device");
 
-    let queue = queue_family.create_queue(0, &device.device);
+    let queue = UniversalQueue::new(&device.handle, queue_family);
 
     let formats = surface.get_surface_formats(phys_ddev);
     let caps = surface.get_surface_capabilities(phys_ddev);
@@ -246,57 +243,61 @@ fn main() -> Result<(), Box<dyn Error>> {
     info!("Цветовой формат: {:?} Цветовое пространство: {:?}", formats[0].format, formats[0].color_space);
     info!("Поддержка VSync: {:?}", present_modes.contains(&PresentModeKHR::FIFO));
 
-    let swapchain = SwapchainBuilder::builder()
+    let format = formats[0].format;
+    let color_space = formats[0].color_space;
+    let extent = caps.current_extent;
+
+    let swapchain = SwapchainBuilder::new()
         .surface(&surface.surface)
-        .instance(&inst.instance)
-        .device(&device.device)
-        .color_space(formats[0].color_space)
-        .format(formats[0].format)
-        .resolution(caps.current_extent)
+        .instance(&instance.handle)
+        .device(&device.handle)
+        .color_space(color_space)
+        .format(format)
+        .resolution(extent)
         .transform(caps.supported_transforms)
         .present_mode(PresentModeKHR::FIFO)
         .build();
 
-    let command_pool = CommandPoolBuilder::builder()
-        .device(&device.device)
+    let command_pool = CommandPoolBuilder::new()
+        .device(&device.handle)
         .family_index(0)
         .build();
 
     let present_images = swapchain.get_swapchain_images();
     info!("Количество изображений в Swapchain: {}", present_images.len());
 
-    let image_views = ImageViewBuilder::builder()
-        .device(&device.device)
-        .format(formats[0].format)
+    let image_views = ImageViewBuilder::new()
+        .device(&device.handle)
+        .format(format)
         .image_views(&present_images)
         .build();
 
-    info!("Количество Image Views: {}", image_views.image_views.len());
+    info!("Количество Image Views на буфер: {}", image_views.image_views.len());
 
-    let shader = ShaderBuilder::builder()
-        .device(&device.device)
-        .fragment_shader_source(r"C:\Users\Oleja\Desktop\d\banan\shaders\f.spv")
-        .vertex_shader_source(r"C:\Users\Oleja\Desktop\d\banan\shaders\v.spv")
+    let shader = ShaderBuilder::new()
+        .device(&device.handle)
+        .fragment_shader_source("./shaders/spv/ray-tracing-frag.spv")
+        .vertex_shader_source("./shaders/spv/triangle-vert.spv")
         .build();
 
     let render_pass = RenderPassBuilder::builder()
-        .device(&device.device)
-        .format(formats[0].format)
+        .device(&device.handle)
+        .format(format)
         .attachments()
         .build();
 
-    let pipeline = RenderPipelineBuilder::builder()
+    let pipeline = RenderPipelineBuilder::new()
         .vertex_shader(shader.vertex_shader)
         .fragment_shader(shader.fragment_shader)
-        .resolution(caps.current_extent)
-        .format(formats[0].format)
+        .resolution(extent)
+        .format(format)
         .input_assembly_info(PrimitiveTopology::TRIANGLE_LIST)
         .render_pass(&render_pass.pass)
-        .device(&device.device)
+        .device(&device.handle)
         .build();
 
-    let framebuffers = FrameBufferBuilder::builder()
-        .device(&device.device)
+    let framebuffers = FrameBufferBuilder::new()
+        .device(&device.handle)
         .image_views(&image_views.image_views)
         .resolution(caps.current_extent)
         .render_pass(&render_pass.pass)
@@ -304,13 +305,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Буферизация: {}", framebuffers.frame_buffers.len());
 
-    let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.device);
+    let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.handle);
     let fence_info = vk::FenceCreateInfo::default()
         .flags(FenceCreateFlags::SIGNALED);
 
-    let fence = unsafe { device.device.create_fence(&fence_info, None).unwrap() };
+    let fence = unsafe { device.handle.create_fence(&fence_info, None).unwrap() };
 
-    main_loop.run(|ev, ev_window| {
+    let _ = main_loop.run(|ev, ev_window| {
         match ev {
             winit::event::Event::WindowEvent { window_id: _, event } => {
                 match event {
@@ -320,8 +321,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     winit::event::WindowEvent::RedrawRequested => {
                         let _ = draw_frame(
-                            &device.device,
-                            &queue,
+                            &device.handle,
+                            &queue.queue[0][0],
                             &swapchain,
                             &command_pool,
                             &pipeline.pipeline,
@@ -346,7 +347,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             _ => {}
         }
-    }).unwrap();
+    });
 
     Ok(())
 }

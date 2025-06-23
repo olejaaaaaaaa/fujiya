@@ -21,7 +21,7 @@ pub struct ShaderBuilder<'n> {
 
 impl<'n> ShaderBuilder<'n> {
 
-    pub fn builder() -> Self {
+    pub fn new() -> Self {
         Self { ..Default::default() }
     }
 

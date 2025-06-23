@@ -33,7 +33,8 @@ pub struct SurfaceBuilder<'n> {
 }
 
 impl<'n> SurfaceBuilder<'n> {
-    pub fn builder() -> Self {
+    
+    pub fn new() -> Self {
         SurfaceBuilder { ..Default::default() }
     }
 

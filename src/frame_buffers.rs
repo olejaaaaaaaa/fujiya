@@ -10,7 +10,7 @@ pub struct FrameBufferBuilder<'n> {
 }
 
 impl<'n> FrameBufferBuilder<'n> {
-    pub fn builder() -> Self {
+    pub fn new() -> Self {
         Self { ..Default::default() }
     }
 

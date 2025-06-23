@@ -1,63 +1,61 @@
-use ash::{khr::swapchain, vk::*};
+use std::ffi::CStr;
+use ash::vk::*;
+
+use crate::queue::QueueFamily;
 
 pub struct LogicalDevice {
-    pub device: ash::Device
+    pub handle: ash::Device
 }
 
 #[derive(Default)]
 pub struct DeviceBuilder<'n> {
-    extensions: Option<Vec<*const i8>>,
+    extensions: Vec<*const i8>,
     features: Option<PhysicalDeviceFeatures>,
-    inst: Option<&'n ash::Instance>,
-    phys_dev: Option<&'n PhysicalDevice>,
-    family_index: Option<u32>
+    family: Option<&'n Vec<QueueFamily>>,
 }
 
 impl<'n> DeviceBuilder<'n> {
-    pub fn builder() -> Self {
+    pub fn new() -> Self {
         Self { ..Default::default() }
     }
 
-    pub fn instance(mut self, inst: &'n ash::Instance) -> Self {
-        self.inst = Some(inst);
+    pub fn add_extension(mut self, name: &'static CStr) -> Self {
+        self.extensions.push(name.as_ptr());
         self
     }
 
-    pub fn phys_dev(mut self, phys_dev: &'n PhysicalDevice) -> Self {
-        self.phys_dev = Some(phys_dev);
+    pub fn queue_family(mut self, family: &'n Vec<QueueFamily>) -> Self {
+        self.family = Some(family);
         self
     }
 
-    pub fn family_index(mut self, index: u32) -> Self {
-        self.family_index = Some(index);
-        self
-    }
+    pub fn build(self, instance: &ash::Instance, phys_dev: &PhysicalDevice) -> core::result::Result<LogicalDevice, Result> {
 
-    pub fn build(self) -> LogicalDevice {
+        let family = self.family.unwrap();
+        let mut priorities: Vec<Vec<f32>> = vec![];
 
-        let features = PhysicalDeviceFeatures {
-                shader_clip_distance: 1,
-                ..Default::default()
-        };
+        for i in family {
+            priorities.push((1..i.properties.queue_count+1).map(|ndx| 1.0 / (ndx as f32)).collect::<Vec<f32>>());
+        }
 
-        let priorities = [1.0];
+        let extensions = self.extensions;
+        let features = self.features.unwrap_or(PhysicalDeviceFeatures::default());
+        let mut queue_infos = vec![];
 
-        let queue_info = DeviceQueueCreateInfo::default()
-            .queue_family_index(self.family_index.unwrap())
-            .queue_priorities(&priorities);
+        for i in family {
+            let queue_info = DeviceQueueCreateInfo::default()
+                .queue_family_index(i.index)
+                .queue_priorities(&priorities[i.index as usize]);
 
-        let queue_array = [queue_info];
-
-        let device_extension_names_raw = [
-            swapchain::NAME.as_ptr(),
-        ];
+            queue_infos.push(queue_info);
+        }
 
         let create_info = DeviceCreateInfo::default()
-            .queue_create_infos(&queue_array)
-            .enabled_extension_names(&device_extension_names_raw)
+            .queue_create_infos(&queue_infos.as_slice()[..1])
+            .enabled_extension_names(&extensions)
             .enabled_features(&features);
 
-        let device = unsafe { self.inst.unwrap().create_device(*self.phys_dev.unwrap(), &create_info, None).unwrap() };
-        LogicalDevice { device }
+        let device = unsafe { instance.create_device(*phys_dev, &create_info, None)? };
+        Ok(LogicalDevice { handle: device })
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "banan"
+name = "fujiya"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,3 +9,13 @@ ash-window = "0.13.0"
 winit = { version = "0.29", features = ["rwh_06"] }
 log = "0.4"
 env_logger = { version = "0.11.8", features = ["color"] }
+
+[profile.release]
+lto = true
+opt-level = 3
+debug = false
+panic = "abort"
+
+[profile.dev]
+debug = true
+opt-level = 2

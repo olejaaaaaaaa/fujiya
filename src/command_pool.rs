@@ -24,7 +24,7 @@ pub struct CommandPoolBuilder<'n> {
 }
 
 impl<'n> CommandPoolBuilder<'n> {
-    pub fn builder() -> Self {
+    pub fn new() -> Self {
         Self { ..Default::default() }
     }
 
