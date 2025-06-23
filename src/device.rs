@@ -51,7 +51,7 @@ impl<'n> DeviceBuilder<'n> {
         }
 
         let create_info = DeviceCreateInfo::default()
-            .queue_create_infos(&queue_infos.as_slice()[..1])
+            .queue_create_infos(&queue_infos)
             .enabled_extension_names(&extensions)
             .enabled_features(&features);
 
