@@ -7,7 +7,7 @@ use ash::vk::{ShaderModule, ShaderModuleCreateInfo};
 use crate::utils::read_shader_from_bytes;
 use log::info;
 
-pub struct Shader {
+pub struct ShaderProgram {
     pub vertex_shader: ShaderModule,
     pub fragment_shader: ShaderModule
 }
@@ -25,7 +25,7 @@ impl<'n> ShaderBuilder<'n> {
         Self { ..Default::default() }
     }
 
-    pub fn device(mut self, device: &'n ash::Device) -> Self {
+    pub fn with_device(mut self, device: &'n ash::Device) -> Self {
         self.device = Some(device);
         self
     }
@@ -44,19 +44,19 @@ impl<'n> ShaderBuilder<'n> {
         text
     }
 
-    pub fn vertex_shader_source(mut self, path: &'n str) -> Self {
+    pub fn with_vertex_shader_source(mut self, path: &'n str) -> Self {
         let source = Self::load_from_file(path);
         self.vertex_shader_source = Some(source);
         self
     }
 
-    pub fn fragment_shader_source(mut self, path: &'n str) -> Self {
+    pub fn with_fragment_shader_source(mut self, path: &'n str) -> Self {
         let source = Self::load_from_file(path);
         self.fragment_shader_source = Some(source);
         self
     }
 
-    pub fn build(self) -> Shader {
+    pub fn build(self) -> ShaderProgram {
 
         let binding = read_shader_from_bytes(&self.fragment_shader_source.unwrap()).unwrap();
         let create_info = ShaderModuleCreateInfo::default()
@@ -72,6 +72,6 @@ impl<'n> ShaderBuilder<'n> {
 
         let vs = unsafe { self.device.unwrap().create_shader_module(&create_info, None) };
 
-        Shader { vertex_shader: vs.unwrap(), fragment_shader: fs.unwrap() }
+        ShaderProgram { vertex_shader: vs.unwrap(), fragment_shader: fs.unwrap() }
     }
 }

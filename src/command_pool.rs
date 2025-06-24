@@ -1,7 +1,7 @@
 use ash::vk::{CommandBuffer, CommandBufferAllocateInfo, CommandBufferLevel, CommandPoolCreateFlags, CommandPoolCreateInfo};
 
 pub struct CommandPool {
-    pub pool: ash::vk::CommandPool
+    pub raw: ash::vk::CommandPool
 }
 
 impl CommandPool {
@@ -9,7 +9,7 @@ impl CommandPool {
 
         let allocate_info = CommandBufferAllocateInfo::default()
             .command_buffer_count(count)
-            .command_pool(self.pool)
+            .command_pool(self.raw)
             .level(level);
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
@@ -24,6 +24,7 @@ pub struct CommandPoolBuilder<'n> {
 }
 
 impl<'n> CommandPoolBuilder<'n> {
+
     pub fn new() -> Self {
         Self { ..Default::default() }
     }
@@ -45,6 +46,6 @@ impl<'n> CommandPoolBuilder<'n> {
             .queue_family_index(self.family_index.unwrap());
 
         let command_pool = unsafe { self.device.unwrap().create_command_pool(&create_info, None).unwrap() };
-        CommandPool { pool: command_pool }
+        CommandPool { raw: command_pool }
     }
 }

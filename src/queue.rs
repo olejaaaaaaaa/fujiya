@@ -1,6 +1,6 @@
+use ash::vk::PhysicalDevice;
+
 use crate::phys_device;
-
-
 
 
 
@@ -10,7 +10,8 @@ use crate::phys_device;
 pub struct QueuesFamilyBuilder<'n> {
     prop: Option<&'n Vec<ash::vk::QueueFamilyProperties>>,
     surface_load: Option<&'n ash::khr::surface::Instance>,
-    surface: Option<&'n ash::vk::SurfaceKHR>
+    surface: Option<&'n ash::vk::SurfaceKHR>,
+    phys_dev: Option<&'n PhysicalDevice>
 }
 
 impl<'n> QueuesFamilyBuilder<'n> {
@@ -19,30 +20,37 @@ impl<'n> QueuesFamilyBuilder<'n> {
         Self { ..Default::default() }
     }
 
-    pub fn surface(mut self, surface: &'n ash::vk::SurfaceKHR) -> Self {
+    pub fn with_surface(mut self, surface: &'n ash::vk::SurfaceKHR) -> Self {
         self.surface = Some(surface);
         self
     }
 
-    pub fn surface_load(mut self, surface_load: &'n ash::khr::surface::Instance) -> Self {
+    pub fn with_surface_load(mut self, surface_load: &'n ash::khr::surface::Instance) -> Self {
         self.surface_load = Some(surface_load);
         self
     }
 
-    pub fn queue_family(mut self, queue: &'n Vec<ash::vk::QueueFamilyProperties>) -> Self {
+    pub fn with_queue_family_prop(mut self, queue: &'n Vec<ash::vk::QueueFamilyProperties>) -> Self {
         self.prop = Some(queue);
         self
     }
 
-    pub fn build(self, phys_device: &ash::vk::PhysicalDevice)  -> Vec<QueueFamily> {
+    pub fn with_phys_dev(mut self, phys_dev: &'n ash::vk::PhysicalDevice) -> Self {
+        self.phys_dev = Some(&phys_dev);
+        self
+    }
+
+    pub fn build(self)  -> Vec<QueueFamily> {
 
         let mut res = vec![];
+
         let families = self.prop.expect("Error not found queue family");
         let surface = self.surface.expect("Error surface");
         let surface_load = self.surface_load.expect("Err");
+        let phys_dev = self.phys_dev.unwrap();
 
         for (index, prop) in families.iter().enumerate() {
-            let support = unsafe { surface_load.get_physical_device_surface_support(*phys_device, index as u32, *surface).unwrap_or(false) };
+            let support = unsafe { surface_load.get_physical_device_surface_support(*phys_dev, index as u32, *surface).unwrap_or(false) };
             res.push(QueueFamily{
                 index: index as u32,
                 properties: *prop,
@@ -63,7 +71,7 @@ pub struct QueueFamily {
 
 pub struct UniversalQueue {
     pub queue_family: Vec<QueueFamily>,
-    pub queue: Vec<Vec<ash::vk::Queue>>
+    pub raw: Vec<Vec<ash::vk::Queue>>
 }
 
 impl UniversalQueue {
@@ -83,6 +91,6 @@ impl UniversalQueue {
             queue.push(queues)
         }
 
-        Self { queue_family: family, queue }
+        Self { queue_family: family, raw: queue }
     }
 }

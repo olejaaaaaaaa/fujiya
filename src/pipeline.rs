@@ -2,7 +2,7 @@ use ash::vk::{BlendFactor, BlendOp, ColorComponentFlags, CullModeFlags, Extent2D
 
 
 pub struct RenderPipeline {
-    pub pipeline: Pipeline
+    pub raw: Pipeline
 }
 
 #[derive(Default)]
@@ -180,7 +180,7 @@ impl<'n> RenderPipelineBuilder<'n> {
                 .map_err(|e| e.1)
         };
 
-        RenderPipeline { pipeline: pipeline.unwrap()[0] }
+        RenderPipeline { raw: pipeline.unwrap()[0] }
     }
 }
 

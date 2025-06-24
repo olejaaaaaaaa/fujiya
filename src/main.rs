@@ -3,7 +3,7 @@
 use std::{error::Error, fs::{read_dir, write, DirEntry, File}, io::Read, process::Command};
 
 mod instance;
-use ash::vk::{CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, SurfaceTransformFlagsKHR, API_VERSION_1_2, API_VERSION_1_3};
+use ash::vk::{AttachmentReference, CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, PipelineBindPoint, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, SurfaceTransformFlagsKHR, API_VERSION_1_2, API_VERSION_1_3};
 use instance::*;
 
 mod app;
@@ -56,6 +56,15 @@ struct Vertex {
     color: [f32; 3]
 }
 
+struct FrameResources {
+    command_buffer: vk::CommandBuffer,
+    image_available: vk::Semaphore,
+    render_finished: vk::Semaphore,
+    in_flight: vk::Fence,
+}
+
+
+
 fn draw_frame(
     device: &ash::Device,
     queue: &ash::vk::Queue,
@@ -90,7 +99,7 @@ fn draw_frame(
     // Записываем команды
     let command_buffer = {
         let allocate_info = vk::CommandBufferAllocateInfo::default()
-            .command_pool(command_pool.pool)
+            .command_pool(command_pool.raw)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(1);
 
@@ -115,7 +124,7 @@ fn draw_frame(
     }];
 
     let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-        .render_pass(render_pass.pass)
+        .render_pass(render_pass.raw)
         .framebuffer(framebuffers[image_index as usize])
         .render_area(vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
@@ -194,8 +203,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let app = AppBuilder::new()
         .with_app_name(c"Bomb")
+        .with_app_verison(000_000_002)
         .with_engine_name(c"Fujiya")
-        .with_engine_verison(2025)
+        .with_engine_verison(24_06_2025)
         .with_api_version(API_VERSION_1_3)
         .build();
 
@@ -207,83 +217,101 @@ fn main() -> Result<(), Box<dyn Error>> {
             c"VK_KHR_surface"
         ])
         .add_layer(c"VK_LAYER_KHRONOS_validation")
-        .with_app_info(&app.handle)
+        .with_app_info(&app.raw)
         .build();
 
-    let phys_dev = PhysicalDevicesBuilder::new()
-        .build(&instance.handle);
+    let phys_dev = PhysicalDeviceBuilder::new()
+        .with_insatnce(&instance.raw)
+        .build();
 
     let surface = SurfaceBuilder::new()
-        .entry(&instance.handle_entry)
-        .instance(&instance.handle)
-        .window(&window)
+        .with_entry(&instance.raw_entry)
+        .with_instance(&instance.raw)
+        .with_window(&window)
         .build();
 
-    let phys_ddev = &phys_dev.handle;
+    let phys_ddev = &phys_dev.raw;
 
     let queue_family = QueuesFamilyBuilder::new()
-        .queue_family(&phys_dev.phys_info.queue_family_prop)
-        .surface(&surface.surface)
-        .surface_load(&surface.surface_load)
-        .build(phys_ddev);
+        .with_queue_family_prop(&phys_dev.phys_info.queue_family_prop)
+        .with_surface(&surface.raw)
+        .with_surface_load(&surface.raw_load)
+        .with_phys_dev(phys_ddev)
+        .build();
 
     let device = DeviceBuilder::new()
         .add_extension(c"VK_KHR_swapchain")
         .queue_family(&queue_family)
-        .build(&instance.handle, phys_ddev)
-        .expect("Erorr create Device");
+        .with_instance(&instance.raw)
+        .with_phys_dev(&phys_dev.raw)
+        .build();
 
-    let queue = UniversalQueue::new(&device.handle, queue_family);
+    let queue = UniversalQueue::new(&device.raw, queue_family);
 
     let formats = surface.get_surface_formats(phys_ddev);
     let caps = surface.get_surface_capabilities(phys_ddev);
     let present_modes = surface.get_surface_present_modes(phys_ddev);
 
-    info!("Текущее разрешение: {}x{}", caps.current_extent.width, caps.current_extent.height);
-    info!("Цветовой формат: {:?} Цветовое пространство: {:?}", formats[0].format, formats[0].color_space);
-    info!("Поддержка VSync: {:?}", present_modes.contains(&PresentModeKHR::FIFO));
-
     let format = formats[0].format;
     let color_space = formats[0].color_space;
     let extent = caps.current_extent;
 
+    info!("Текущее разрешение: {}x{}", caps.current_extent.width, caps.current_extent.height);
+    info!("Цветовой формат: {:?} Цветовое пространство: {:?}", format, color_space);
+    info!("Поддержка VSync: {:?}", present_modes.contains(&PresentModeKHR::FIFO));
+
     let swapchain = SwapchainBuilder::new()
-        .surface(&surface.surface)
-        .instance(&instance.handle)
-        .device(&device.handle)
-        .color_space(color_space)
-        .format(format)
-        .resolution(extent)
-        .transform(caps.supported_transforms)
-        .present_mode(PresentModeKHR::FIFO)
+        .with_color_space(color_space)
+        .with_format(format)
+        .with_resolution(extent)
+        .with_transform(caps.supported_transforms)
+        .with_present_mode(PresentModeKHR::FIFO)
+        .with_instance(&instance.raw)
+        .with_device(&device.raw)
+        .with_surface(&surface.raw)
         .build();
 
     let command_pool = CommandPoolBuilder::new()
-        .device(&device.handle)
+        .device(&device.raw)
         .family_index(0)
         .build();
+
+    let buffer = command_pool.create_buffers(&device.raw, 1, CommandBufferLevel::PRIMARY)[0];
 
     let present_images = swapchain.get_swapchain_images();
     info!("Количество изображений в Swapchain: {}", present_images.len());
 
     let image_views = ImageViewBuilder::new()
-        .device(&device.handle)
-        .format(format)
-        .image_views(&present_images)
+        .with_device(&device.raw)
+        .with_format(format)
+        .with_image_views(&present_images)
         .build();
 
-    info!("Количество Image Views на буфер: {}", image_views.image_views.len());
+    info!("Количество Image Views на буфер: {}", image_views.raw.len());
 
     let shader = ShaderBuilder::new()
-        .device(&device.handle)
-        .fragment_shader_source("./shaders/spv/ray-tracing-frag.spv")
-        .vertex_shader_source("./shaders/spv/triangle-vert.spv")
+        .with_device(&device.raw)
+        .with_fragment_shader_source("./shaders/spv/ray-tracing-frag.spv")
+        .with_vertex_shader_source("./shaders/spv/triangle-vert.spv")
         .build();
 
-    let render_pass = RenderPassBuilder::builder()
-        .device(&device.handle)
-        .format(format)
-        .attachments()
+    let subpass = SubpassBuilder::new()
+        .add_color_attachment_ref(
+            AttachmentReference::default()
+                .attachment(0)
+                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        )
+        .with_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .build();
+
+    let attachment_desc = AttachmentDescription::default(format);
+    let subpass_deps = SubpassDependency::default();
+
+    let render_pass = RenderPassBuilder::new()
+        .with_device(&device.raw)
+        .add_subpass(subpass.raw)
+        .add_subpass_dependency(subpass_deps.raw)
+        .add_attachments_desc(attachment_desc.raw)
         .build();
 
     let pipeline = RenderPipelineBuilder::new()
@@ -292,61 +320,53 @@ fn main() -> Result<(), Box<dyn Error>> {
         .resolution(extent)
         .format(format)
         .input_assembly_info(PrimitiveTopology::TRIANGLE_LIST)
-        .render_pass(&render_pass.pass)
-        .device(&device.handle)
+        .render_pass(&render_pass.raw)
+        .device(&device.raw)
         .build();
 
     let framebuffers = FrameBufferBuilder::new()
-        .device(&device.handle)
-        .image_views(&image_views.image_views)
+        .device(&device.raw)
+        .image_views(&image_views.raw)
         .resolution(caps.current_extent)
-        .render_pass(&render_pass.pass)
+        .render_pass(&render_pass.raw)
         .build();
 
     info!("Буферизация: {}", framebuffers.frame_buffers.len());
 
-    let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.handle);
+    let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.raw);
     let fence_info = vk::FenceCreateInfo::default()
         .flags(FenceCreateFlags::SIGNALED);
 
-    let fence = unsafe { device.handle.create_fence(&fence_info, None).unwrap() };
+    let fence = unsafe { device.raw.create_fence(&fence_info, None).unwrap() };
 
     let _ = main_loop.run(|ev, ev_window| {
-        match ev {
-            winit::event::Event::WindowEvent { window_id: _, event } => {
-                match event {
-                    winit::event::WindowEvent::CloseRequested => {
-                        ev_window.exit();
-                    },
-
-                    winit::event::WindowEvent::RedrawRequested => {
-                        let _ = draw_frame(
-                            &device.handle,
-                            &queue.queue[0][0],
-                            &swapchain,
-                            &command_pool,
-                            &pipeline.pipeline,
-                            &render_pass,
-                            &framebuffers.frame_buffers,
-                            image_available_semaphore,
-                            render_finished_semaphore,
-                            fence
-                        );
-                    }
-
-                    winit::event::WindowEvent::Resized(_) => {
-
-                    }
-                    _ => {}
-                }
+    match ev {
+        winit::event::Event::WindowEvent { window_id: _, event } => match event {
+            winit::event::WindowEvent::CloseRequested => ev_window.exit(),
+            winit::event::WindowEvent::RedrawRequested => {
+                    let _ = draw_frame(
+                        &device.raw,
+                        &queue.raw[0][0],
+                        &swapchain,
+                        &command_pool,
+                        &pipeline.raw,
+                        &render_pass,
+                        &framebuffers.frame_buffers,
+                        image_available_semaphore,
+                        render_finished_semaphore,
+                        fence
+                    );
             }
-
-            winit::event::Event::AboutToWait => {
-                window.request_redraw();
+            winit::event::WindowEvent::Resized(_) => {
+                // Обработка изменения размера
             }
-
             _ => {}
+        },
+        winit::event::Event::AboutToWait => {
+            window.request_redraw();
         }
+        _ => {}
+    }
     });
 
     Ok(())

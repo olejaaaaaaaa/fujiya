@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use ash::vk::*;
 
 pub struct App<'n> {
-    pub handle: ApplicationInfo<'n>
+    pub raw: ApplicationInfo<'n>
 }
 
 #[derive(Default)]
@@ -62,6 +62,6 @@ impl<'n> AppBuilder<'n> {
             .engine_version(engine_version)
             .application_version(app_version);
 
-        App { handle: app_info }
+        App { raw: app_info }
     }
 }

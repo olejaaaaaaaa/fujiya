@@ -2,7 +2,7 @@ use std::process::Command;
 use std::fs::read_dir;
 
 fn main() {
-    
+
     let dirs = read_dir("./shaders").unwrap();
     for file_name in dirs {
         match file_name {
@@ -24,7 +24,6 @@ fn main() {
                         .unwrap()
                         .wait();
                 }
-
             },
 
             _ => {}

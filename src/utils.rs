@@ -1,4 +1,4 @@
-
+#![allow(warnings)]
 use std::{error::Error, ffi::{c_void, CStr}};
 
 use ash::{vk::{ExtensionProperties, LayerProperties}, Entry};

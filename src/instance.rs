@@ -13,8 +13,8 @@ pub struct InstanceBuilder<'n> {
 }
 
 pub struct Instance {
-    pub handle: ash::Instance,
-    pub handle_entry: Entry,
+    pub raw: ash::Instance,
+    pub raw_entry: Entry,
 }
 
 impl<'n> InstanceBuilder<'n> {
@@ -58,8 +58,8 @@ impl<'n> InstanceBuilder<'n> {
             .enabled_layer_names(&layers)
             .flags(flags);
 
-        let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
-        Instance { handle: instance, handle_entry: entry }
+        let instance = unsafe { entry.create_instance(&create_info, None).expect("Error create Instance") };
+        Instance { raw: instance, raw_entry: entry }
     }
 
 }
@@ -75,7 +75,7 @@ pub fn load_instance_layer_props(entry: &Entry) -> Vec<LayerProperties> {
 impl Drop for Instance {
     fn drop(&mut self) {
         unsafe {
-            //self.handle.destroy_instance(None);
+            //self.raw.destroy_instance(None);
         }
     }
 }
