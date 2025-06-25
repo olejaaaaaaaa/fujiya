@@ -1,9 +1,9 @@
 #![warn(unused_qualifications)]
 
-use std::{error::Error, fs::{read_dir, write, DirEntry, File}, io::Read, process::Command};
+use std::{error::Error, fs::{read_dir, write, DirEntry, File}, io::Read, mem::offset_of, process::Command};
 
 mod instance;
-use ash::vk::{AttachmentReference, CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, PipelineBindPoint, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, SurfaceTransformFlagsKHR, API_VERSION_1_2, API_VERSION_1_3};
+use ash::{util::Align, vk::{AttachmentReference, BufferCreateInfo, CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, MemoryAllocateInfo, MemoryPropertyFlags, PipelineBindPoint, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, SurfaceTransformFlagsKHR, API_VERSION_1_2, API_VERSION_1_3}};
 use instance::*;
 
 mod app;
@@ -51,17 +51,55 @@ use sync::*;
 
 use ash::vk;
 
+#[repr(C)]
+#[derive(Copy, Clone)]
 struct Vertex {
-    pos: [f32; 3],
-    color: [f32; 3]
+    pos: [f32; 2],
+    color: [f32; 3],
 }
 
-struct FrameResources {
-    command_buffer: vk::CommandBuffer,
-    image_available: vk::Semaphore,
-    render_finished: vk::Semaphore,
-    in_flight: vk::Fence,
+impl Vertex {
+    fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
+        [vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: vk::VertexInputRate::VERTEX,
+        }]
+    }
+
+    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+        [
+            vk::VertexInputAttributeDescription {
+                location: 0,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: offset_of!(Self, pos) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                binding: 0,
+                location: 1,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Self, color) as u32,
+            },
+        ]
+    }
 }
+
+const _VERTICES_DATA: [Vertex; 3] = [
+    Vertex {
+        pos: [0.0, -0.5],
+        color: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        pos: [0.5, 0.5],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        pos: [-0.3, 0.5],
+        color: [0.0, 0.0, 1.0],
+    },
+];
+
 
 
 
@@ -70,6 +108,7 @@ fn draw_frame(
     queue: &ash::vk::Queue,
     swapchain: &Swapchain,
     command_pool: &CommandPool,
+    buffer: &ash::vk::Buffer,
     pipeline: &vk::Pipeline,
     render_pass: &RenderPass,
     framebuffers: &[vk::Framebuffer],
@@ -145,6 +184,7 @@ fn draw_frame(
             *pipeline,
         );
 
+        device.cmd_bind_vertex_buffers(command_buffer, 0, &[*buffer], &[0]);
         device.cmd_draw(command_buffer, 6, 1, 0, 0);
         device.cmd_end_render_pass(command_buffer);
         device.end_command_buffer(command_buffer)?;
@@ -276,8 +316,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         .family_index(0)
         .build();
 
-    let buffer = command_pool.create_buffers(&device.raw, 1, CommandBufferLevel::PRIMARY)[0];
-
     let present_images = swapchain.get_swapchain_images();
     info!("Количество изображений в Swapchain: {}", present_images.len());
 
@@ -291,7 +329,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let shader = ShaderBuilder::new()
         .with_device(&device.raw)
-        .with_fragment_shader_source("./shaders/spv/ray-tracing-frag.spv")
+        .with_fragment_shader_source("./shaders/spv/triangle-frag.spv")
         .with_vertex_shader_source("./shaders/spv/triangle-vert.spv")
         .build();
 
@@ -304,24 +342,103 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .build();
 
-    let attachment_desc = AttachmentDescription::default(format);
-    let subpass_deps = SubpassDependency::default();
-
     let render_pass = RenderPassBuilder::new()
         .with_device(&device.raw)
         .add_subpass(subpass.raw)
-        .add_subpass_dependency(subpass_deps.raw)
-        .add_attachments_desc(attachment_desc.raw)
+        .add_subpass_dependency(
+            vk::SubpassDependency {
+                src_subpass: vk::SUBPASS_EXTERNAL,
+                src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ..Default::default()
+            })
+        .add_attachments_desc(vk::AttachmentDescription {
+                format: format,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                ..Default::default()
+            })
         .build();
 
+    //-------------------------------
+        let binding_description = Vertex::get_binding_descriptions();
+        let attribute_description = Vertex::get_attribute_descriptions();
+
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&attribute_description)
+            .vertex_binding_descriptions(&binding_description);
+
+        // Calculate total size needed
+        let vertex_buffer_size = (std::mem::size_of::<Vertex>() * _VERTICES_DATA.len()) as u64;
+
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(vertex_buffer_size)
+            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe { device.raw.create_buffer(&buffer_info, None).unwrap() };
+
+        // Get memory requirements
+        let req = unsafe { device.raw.get_buffer_memory_requirements(buffer) };
+
+        // Find suitable memory type
+        let index = find_memorytype_index(
+            &req, 
+            &phys_dev.phys_info.memory_prop, 
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
+        ).expect("Failed to find suitable memory type");
+
+        // Allocate memory
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(req.size)
+            .memory_type_index(index);
+
+        let mem = unsafe { device.raw.allocate_memory(&alloc_info, None).unwrap() };
+
+        // Bind memory to buffer
+        unsafe { device.raw.bind_buffer_memory(buffer, mem, 0).expect("Failed to bind buffer memory") };
+
+        // Map memory and copy data
+        let ptr = unsafe {
+            device.raw.map_memory(
+                mem, 
+                0, 
+                vertex_buffer_size, 
+                vk::MemoryMapFlags::empty()
+            ).unwrap()
+        };
+
+        // Create properly aligned slice
+        let mut slice = unsafe {
+            std::slice::from_raw_parts_mut(
+                ptr as *mut Vertex,
+                _VERTICES_DATA.len()
+            )
+        };
+
+        // Copy data to GPU memory
+        slice.copy_from_slice(&_VERTICES_DATA);
+
+        // Unmap memory if you want (optional for HOST_COHERENT)
+        unsafe { device.raw.unmap_memory(mem) };
+    //-------------------------------
+
     let pipeline = RenderPipelineBuilder::new()
-        .vertex_shader(shader.vertex_shader)
-        .fragment_shader(shader.fragment_shader)
-        .resolution(extent)
-        .format(format)
-        .input_assembly_info(PrimitiveTopology::TRIANGLE_LIST)
-        .render_pass(&render_pass.raw)
-        .device(&device.raw)
+        .with_vertex_shader(shader.vertex_shader)
+        .with_fragment_shader(shader.fragment_shader)
+        .with_resolution(extent)
+        .with_format(format)
+        .with_vertex_input_info(vertex_input_state_info)
+        .with_input_assembly_info(
+            vk::PipelineInputAssemblyStateCreateInfo::default()
+                        .topology(PrimitiveTopology::TRIANGLE_LIST)
+                        .primitive_restart_enable(false)
+        )
+        .with_render_pass(&render_pass.raw)
+        .with_device(&device.raw)
         .build();
 
     let framebuffers = FrameBufferBuilder::new()
@@ -349,6 +466,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         &queue.raw[0][0],
                         &swapchain,
                         &command_pool,
+                        &buffer,
                         &pipeline.raw,
                         &render_pass,
                         &framebuffers.frame_buffers,

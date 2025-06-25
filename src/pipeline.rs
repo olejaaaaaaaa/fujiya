@@ -28,54 +28,50 @@ impl<'n> RenderPipelineBuilder<'n> {
         Self { ..Default::default() }
     }
 
-    pub fn render_pass(mut self, pass: &'n RenderPass) -> Self {
+    pub fn with_render_pass(mut self, pass: &'n RenderPass) -> Self {
         self.render_pass = Some(pass);
         self
     }
 
-    pub fn vertex_shader(mut self, shader: ShaderModule) -> Self {
+    pub fn with_vertex_shader(mut self, shader: ShaderModule) -> Self {
         self.vertex_shader = Some(shader);
         self
     }
 
-    pub fn fragment_shader(mut self, shader: ShaderModule) -> Self {
+    pub fn with_fragment_shader(mut self, shader: ShaderModule) -> Self {
         self.fragment_shader = Some(shader);
         self
     }
 
-    pub fn resolution(mut self, res: Extent2D) -> Self {
+    pub fn with_vertex_input_info(mut self, input: PipelineVertexInputStateCreateInfo<'n>) -> Self {
+        self.vertex_input_info = Some(input);
+        self
+    }
+
+    pub fn with_resolution(mut self, res: Extent2D) -> Self {
         self.resolution = Some(res);
         self
     }
 
-    pub fn input_assembly_info(mut self, topology: PrimitiveTopology) -> Self {
-
-        let input_assembly_info = PipelineInputAssemblyStateCreateInfo::default()
-            .topology(topology)
-            .primitive_restart_enable(false);
-
-        self.input_assembly_info = Some(input_assembly_info);
+    pub fn with_input_assembly_info(mut self, input: PipelineInputAssemblyStateCreateInfo<'n>) -> Self {
+        self.input_assembly_info = Some(input);
         self
     }
 
-    pub fn shader_states_info(mut self) -> Self {
+    pub fn with_scissors(mut self) -> Self {
         self
     }
 
-    pub fn scissors(mut self) -> Self {
-        self
-    }
-
-    pub fn format(mut self, format: Format) -> Self {
+    pub fn with_format(mut self, format: Format) -> Self {
         self.format = Some(format);
         self
     }
 
-    pub fn viewports(mut self) -> Self {
+    pub fn with_viewports(mut self) -> Self {
         self
     }
 
-    pub fn device(mut self, dev: &'n ash::Device) -> Self {
+    pub fn with_device(mut self, dev: &'n ash::Device) -> Self {
         self.device = Some(dev);
         self
     }
@@ -95,7 +91,7 @@ impl<'n> RenderPipelineBuilder<'n> {
                 .stage(ShaderStageFlags::FRAGMENT),
         ];
 
-        let vertex_input_info = PipelineVertexInputStateCreateInfo::default();
+        let vertex_input_info = self.vertex_input_info.unwrap_or(PipelineVertexInputStateCreateInfo::default());
         let input_assembly_info = self.input_assembly_info.unwrap();
 
         let viewports = [Viewport {
@@ -135,7 +131,8 @@ impl<'n> RenderPipelineBuilder<'n> {
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false);
 
-        let color_blend_attachments = [PipelineColorBlendAttachmentState::default()
+        let color_blend_attachments = [
+            PipelineColorBlendAttachmentState::default()
             .color_write_mask(ColorComponentFlags::RGBA)
             .blend_enable(false)
             .src_color_blend_factor(BlendFactor::ONE)
@@ -143,7 +140,8 @@ impl<'n> RenderPipelineBuilder<'n> {
             .color_blend_op(BlendOp::ADD)
             .src_alpha_blend_factor(BlendFactor::ONE)
             .dst_alpha_blend_factor(BlendFactor::ZERO)
-            .alpha_blend_op(BlendOp::ADD)];
+            .alpha_blend_op(BlendOp::ADD)
+        ];
 
         let color_blending_info = PipelineColorBlendStateCreateInfo::default()
             .logic_op_enable(false)
@@ -152,6 +150,7 @@ impl<'n> RenderPipelineBuilder<'n> {
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
         let color_attachment_formats = [self.format.unwrap()];
+
         let mut rendering_info = PipelineRenderingCreateInfo::default()
             .color_attachment_formats(&color_attachment_formats);
 
