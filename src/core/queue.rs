@@ -1,9 +1,6 @@
 use ash::vk::PhysicalDevice;
 
-use crate::phys_device;
-
-
-
+use crate::device::core::phys_device;
 
 
 #[derive(Default)]

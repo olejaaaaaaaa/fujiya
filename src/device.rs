@@ -1,76 +1,79 @@
-use std::ffi::CStr;
-use ash::vk::*;
+#[path="./core/mod.rs"]
+mod core;
+pub use core::app::{App, AppBuilder};
+pub use core::instance::{Instance, InstanceBuilder};
+pub use core::phys_device::{PhysicalDevice, PhysicalDeviceBuilder};
 
-use crate::queue::QueueFamily;
+pub struct Device;
 
-pub struct Device {
-    pub raw: ash::Device
+// Состояния билдера
+pub struct NoApp;
+pub struct HasApp<'n> {
+    app: App<'n>,
+}
+pub struct HasInstance<'n> {
+    app: App<'n>,
+    instance: Instance,
+}
+pub struct Complete<'n> {
+    app: App<'n>,
+    instance: Instance,
+    phys_dev: PhysicalDevice,
 }
 
-#[derive(Default)]
-pub struct DeviceBuilder<'n> {
-    extensions: Vec<*const i8>,
-    features: Option<PhysicalDeviceFeatures>,
-    family: Option<&'n Vec<QueueFamily>>,
-    insatnce: Option<&'n ash::Instance>,
-    phys_dev: Option<&'n ash::vk::PhysicalDevice>
+pub struct DeviceConfigBuilder<S> {
+    state: S,
 }
 
-impl<'n> DeviceBuilder<'n> {
+impl<'n> DeviceConfigBuilder<NoApp> {
     pub fn new() -> Self {
-        Self { ..Default::default() }
-    }
-
-    pub fn add_extension(mut self, name: &'static CStr) -> Self {
-        self.extensions.push(name.as_ptr());
-        self
-    }
-
-    pub fn queue_family(mut self, family: &'n Vec<QueueFamily>) -> Self {
-        self.family = Some(family);
-        self
-    }
-
-    pub fn with_instance(mut self, instance: &'n ash::Instance) -> Self {
-        self.insatnce = Some(instance);
-        self
-    }
-
-    pub fn with_phys_dev(mut self, phys_dev: &'n ash::vk::PhysicalDevice) -> Self {
-        self.phys_dev = Some(phys_dev);
-        self
-    }
-
-    pub fn build(self) -> Device {
-
-        let instance = self.insatnce.unwrap();
-        let phys_dev = self.phys_dev.unwrap();
-
-        let family = self.family.unwrap();
-        let mut priorities: Vec<Vec<f32>> = vec![];
-
-        for i in family {
-            priorities.push((1..i.properties.queue_count+1).map(|ndx| 1.0 / (ndx as f32)).collect::<Vec<f32>>());
+        Self {
+            state: NoApp,
         }
+    }
 
-        let extensions = self.extensions;
-        let features = self.features.unwrap_or(PhysicalDeviceFeatures::default());
-        let mut queue_infos = vec![];
-
-        for i in family {
-            let queue_info = DeviceQueueCreateInfo::default()
-                .queue_family_index(i.index)
-                .queue_priorities(&priorities[i.index as usize]);
-
-            queue_infos.push(queue_info);
+    pub fn with_app(self, app: App<'n>) -> DeviceConfigBuilder<HasApp<'n>> {
+        DeviceConfigBuilder {
+            state: HasApp { app },
         }
+    }
 
-        let create_info = DeviceCreateInfo::default()
-            .queue_create_infos(&queue_infos)
-            .enabled_extension_names(&extensions)
-            .enabled_features(&features);
+    pub fn with_default_app(self) -> DeviceConfigBuilder<HasApp<'n>> {
+        let app = AppBuilder::new()
+            .with_app_name(c"App")
+            .with_api_version(000_000_000)
+            .with_engine_name(c"Fujiya")
+            .with_engine_verison(24_06_2025)
+            .with_api_version(ash::vk::API_VERSION_1_0)
+            .build();
 
-        let device = unsafe { instance.create_device(*phys_dev, &create_info, None).unwrap() };
-        Device { raw: device }
+        self.with_app(app)
     }
 }
+
+impl<'n> DeviceConfigBuilder<HasApp<'n>> {
+    pub fn with_instance<F>(self, build_fn: F) -> DeviceConfigBuilder<HasInstance<'n>>
+    where
+        F: FnOnce(&ash::vk::ApplicationInfo<'n>, InstanceBuilder) -> Instance,
+    {
+        let mut builder = InstanceBuilder::new();
+        let instance = build_fn(&self.state.app.raw, builder);
+
+        DeviceConfigBuilder {
+            state: HasInstance {
+                app: self.state.app,
+                instance,
+            },
+        }
+    }
+
+    pub fn with_default_instance(self) -> DeviceConfigBuilder<HasInstance<'n>> {
+        self.with_instance(|app_info, builder| {
+            builder
+                .add_layer(c"VK_LAYER_KHRONOS_validation")
+                .with_app_info(app_info)
+                .build()
+        })
+    }
+}
+

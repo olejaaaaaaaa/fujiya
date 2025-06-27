@@ -1,8 +1,7 @@
 use ash::vk::*;
 use log::info;
 
-use crate::instance;
-
+use crate::device::core::instance;
 
 pub struct PhysicalDevice {
     pub raw: ash::vk::PhysicalDevice,
