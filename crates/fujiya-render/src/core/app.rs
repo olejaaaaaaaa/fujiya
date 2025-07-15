@@ -2,10 +2,40 @@
 use std::ffi::CStr;
 use ash::vk::*;
 
+///
+/// App contains ash::vk::ApplicationInfo<'_>
+///
+/// how to use:
+/// ```
+/// fn main() {
+///     let app = AppBuilder::new()
+///         .with_api_version(ash::vk::API_VERSION_1_0)
+///         .build()
+/// }
+/// ```
 pub struct App<'n> {
     pub raw: ApplicationInfo<'n>
 }
 
+///
+/// Default values:
+///     - api_version = VK_API_VERSION_1_0
+///     - app_name = c"None"
+///     - app_version = 0
+///     - engine_name = c"Fujiya"
+///     - engine_version = 0
+///
+/// example:
+/// ```
+/// fn main() {
+///     let app = AppBuilder::new()
+///         .with_api_version(ash::vk::API_VERSION_1_0)
+///         .with_app_name(c"Mario")
+///         .build()
+/// }
+/// ```
+///
+///
 #[derive(Default)]
 pub struct AppBuilder<'n> {
     engine_name: Option<&'n CStr>,
@@ -26,18 +56,17 @@ impl<'n> AppBuilder<'n> {
         self
     }
 
-    #[must_use]
     pub fn with_api_version(mut self, version: u32) -> Self {
         self.api_version = Some(version);
         self
     }
 
-    pub fn with_engine_verison(mut self, version: u32) -> Self {
+    pub fn with_engine_version(mut self, version: u32) -> Self {
         self.engine_version = Some(version);
         self
     }
 
-    pub fn with_app_verison(mut self, version: u32) -> Self {
+    pub fn with_app_version(mut self, version: u32) -> Self {
         self.app_version = Some(version);
         self
     }
@@ -49,7 +78,7 @@ impl<'n> AppBuilder<'n> {
 
     pub fn build(self) -> App<'n> {
 
-        let engine_name = self.engine_name.unwrap_or(c"None");
+        let engine_name = self.engine_name.unwrap_or(c"Fujiya");
         let engine_version = self.api_version.unwrap_or(0);
         let app_name = self.app_name.unwrap_or(c"None");
         let app_version = self.app_version.unwrap_or(0);

@@ -28,7 +28,9 @@ impl Surface {
 pub struct SurfaceBuilder<'n> {
     entry: Option<&'n ash::Entry>,
     instance: Option<&'n ash::Instance>,
-    window: Option<&'n winit::window::Window>,
+    window_handle: Option<&'n RawWindowHandle>,
+    display_handle: Option<&'n RawDisplayHandle>,
+    allocation: ()
 }
 
 impl<'n> SurfaceBuilder<'n> {
@@ -37,26 +39,30 @@ impl<'n> SurfaceBuilder<'n> {
         SurfaceBuilder { ..Default::default() }
     }
 
-    #[must_use]
     pub fn with_instance(mut self, inst: &'n ash::Instance) -> Self {
         self.instance = Some(inst);
         self
     }
 
-    #[must_use]
-    pub fn with_window(mut self, window: &'n winit::window::Window) -> Self {
-        self.window = Some(window);
+    pub fn with_window_handle(mut self, handle: &'n RawWindowHandle) -> Self {
+        self.window_handle = Some(handle);
         self
     }
 
-    #[must_use]
+    pub fn with_display_handle(mut self, handle: &'n RawDisplayHandle) -> Self {
+        self.display_handle = Some(handle);
+        self
+    }
+
     pub fn with_entry(mut self, entry: &'n ash::Entry) -> Self {
         self.entry = Some(entry);
         self
     }
 
     pub fn build(self) -> Surface {
-        let surface = unsafe { ash_window::create_surface(self.entry.unwrap(), self.instance.unwrap(), self.window.unwrap().display_handle().unwrap().into(), self.window.unwrap().window_handle().unwrap().into(), None).unwrap() };
+        let display_handle = self.display_handle.unwrap();
+        let window_handle = self.window_handle.unwrap();
+        let surface = unsafe { ash_window::create_surface(self.entry.unwrap(), self.instance.unwrap(), *display_handle, *window_handle, None).unwrap() };
         let surface_load = ash::khr::surface::Instance::new(&self.entry.unwrap(), &self.instance.unwrap());
         Surface { raw: surface, raw_load: surface_load }
     }

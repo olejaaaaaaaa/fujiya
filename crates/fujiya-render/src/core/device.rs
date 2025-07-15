@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use ash::vk::*;
 
-use crate::device::core::queue::QueueFamily;
+use crate::core::*;
 
 pub struct Device {
     pub raw: ash::Device
@@ -13,7 +13,8 @@ pub struct DeviceBuilder<'n> {
     features: Option<PhysicalDeviceFeatures>,
     family: Option<&'n Vec<QueueFamily>>,
     insatnce: Option<&'n ash::Instance>,
-    phys_dev: Option<&'n ash::vk::PhysicalDevice>
+    phys_dev: Option<&'n ash::vk::PhysicalDevice>,
+    allocation: ()
 }
 
 impl<'n> DeviceBuilder<'n> {
@@ -21,8 +22,13 @@ impl<'n> DeviceBuilder<'n> {
         Self { ..Default::default() }
     }
 
-    pub fn add_extension(mut self, name: &'static CStr) -> Self {
-        self.extensions.push(name.as_ptr());
+    pub fn with_features(mut self, features: PhysicalDeviceFeatures) -> Self {
+        self.features = Some(features);
+        self
+    }
+
+    pub fn with_extensions(mut self, names: Vec<&'static CStr>) -> Self {
+        self.extensions.extend(names.iter().map(|name| name.as_ptr()).collect::<Vec<_>>());
         self
     }
 
@@ -45,8 +51,8 @@ impl<'n> DeviceBuilder<'n> {
 
         let instance = self.insatnce.unwrap();
         let phys_dev = self.phys_dev.unwrap();
-
         let family = self.family.unwrap();
+
         let mut priorities: Vec<Vec<f32>> = vec![];
 
         for i in family {

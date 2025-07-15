@@ -1,6 +1,5 @@
 use ash::vk::PhysicalDevice;
 
-use crate::device::core::phys_device;
 
 
 #[derive(Default)]
@@ -72,6 +71,7 @@ pub struct UniversalQueue {
 }
 
 impl UniversalQueue {
+
     pub fn new(device: &ash::Device, family: Vec<QueueFamily>) -> Self {
 
         let mut queue = vec![];

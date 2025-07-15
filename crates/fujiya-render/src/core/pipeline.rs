@@ -79,7 +79,6 @@ impl<'n> RenderPipelineBuilder<'n> {
     pub fn build(self) -> RenderPipeline {
 
         let shader_states_infos = [
-
             PipelineShaderStageCreateInfo::default()
                 .module(self.vertex_shader.unwrap())
                 .name(c"main")

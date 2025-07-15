@@ -3,7 +3,7 @@ use std::fs::read_dir;
 
 fn main() {
 
-    let dirs = read_dir("./shaders").unwrap();
+    let dirs = read_dir(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders").unwrap();
     for file_name in dirs {
         match file_name {
             Ok(name) => {
@@ -16,13 +16,18 @@ fn main() {
                 let out_name = format!("{}-{}.spv", name, format);
 
                 if format == "frag" || format == "vert" {
-                    let _ = Command::new("glslc")
+                    let res = Command::new("glslc")
                         .arg(format!("./shaders/{}", original_name))
                         .arg("-o")
                         .arg(format!("./shaders/spv/{}", out_name))
                         .spawn()
                         .unwrap()
                         .wait();
+
+
+                    if res.is_err() {
+                        panic!("WARN: {}", original_name)
+                    }
                 }
             },
 

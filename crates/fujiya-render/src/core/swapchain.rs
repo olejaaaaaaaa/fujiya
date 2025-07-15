@@ -72,7 +72,7 @@ impl<'n> SwapchainBuilder<'n> {
 
     pub fn build(self) -> Swapchain {
 
-        let surface = self.surface.unwrap();
+        let surface = self.surface.expect("Surface is required");
         let instance = self.insatnce.unwrap();
         let device = self.device.unwrap();
         let format = self.format.unwrap();
