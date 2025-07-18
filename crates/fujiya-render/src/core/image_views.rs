@@ -1,18 +1,18 @@
 
 use ash::{self, vk::{ComponentMapping, ComponentSwizzle, Format, Image, ImageAspectFlags, ImageSubresourceRange, ImageViewCreateInfo, ImageViewType}};
 
-pub struct ImageView {
+pub struct ImageViews {
     pub raw: Vec<ash::vk::ImageView>
 }
 
 #[derive(Default)]
-pub struct ImageViewBuilder<'n> {
+pub struct ImageViewsBuilder<'n> {
     device: Option<&'n ash::Device>,
     images: Option<&'n Vec<Image>>,
     format: Option<Format>
 }
 
-impl<'n> ImageViewBuilder<'n> {
+impl<'n> ImageViewsBuilder<'n> {
     pub fn new() -> Self {
         Self { ..Default::default() }
     }
@@ -32,7 +32,7 @@ impl<'n> ImageViewBuilder<'n> {
         self
     }
 
-    pub fn build(self) -> ImageView {
+    pub fn build(self) -> ImageViews {
 
         let mut image_views: Vec<ash::vk::ImageView> = vec![];
 
@@ -60,6 +60,6 @@ impl<'n> ImageViewBuilder<'n> {
             image_views.push(image_view)
         }
 
-        ImageView { raw: image_views }
+        ImageViews { raw: image_views }
     }
 }

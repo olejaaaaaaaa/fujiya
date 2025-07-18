@@ -1,17 +1,36 @@
-use ash::vk::{ColorSpaceKHR, Extent2D, Format, Image, PresentModeKHR, SurfaceKHR, SurfaceTransformFlagsKHR, SwapchainKHR};
+use ash::vk::{
+    ColorSpaceKHR,
+    Extent2D,
+    Format,
+    Image,
+    PresentModeKHR,
+    SurfaceTransformFlagsKHR,
+    SwapchainKHR
+};
 
+/// Vulkan swapchain abstraction representing a collection of presentable images
+/// 
+/// # Fields
+/// - `swapchain`: Raw Vulkan swapchain handle
+/// - `swapchain_load`: Loaded swapchain extension functions
 pub struct Swapchain {
     pub swapchain: SwapchainKHR,
     pub swapchain_load: ash::khr::swapchain::Device
 }
 
 impl Swapchain {
+    ///
+    /// Get Current swapchain images
+    ///
     pub fn get_swapchain_images(&self) -> Vec<Image> {
-        let images = unsafe { self.swapchain_load.get_swapchain_images(self.swapchain).unwrap() };
+        let images = unsafe { self.swapchain_load.get_swapchain_images(self.swapchain).expect("Failed to get swapchain images") };
         images
     }
 }
 
+///
+/// Vulkan Swapchain Builder
+///
 #[derive(Default)]
 pub struct SwapchainBuilder<'n> {
     image_color_space: Option<ColorSpaceKHR>,
@@ -19,7 +38,7 @@ pub struct SwapchainBuilder<'n> {
     resolution: Option<Extent2D>,
     transform: Option<SurfaceTransformFlagsKHR>,
     present_mode: Option<PresentModeKHR>,
-    insatnce: Option<&'n ash::Instance>,
+    instance: Option<&'n ash::Instance>,
     device: Option<&'n ash::Device>,
     surface: Option<&'n  ash::vk::SurfaceKHR>
 }
@@ -56,7 +75,7 @@ impl<'n> SwapchainBuilder<'n> {
     }
 
     pub fn with_instance(mut self, instance: &'n ash::Instance) -> Self {
-        self.insatnce = Some(instance);
+        self.instance = Some(instance);
         self
     }
 
@@ -70,16 +89,18 @@ impl<'n> SwapchainBuilder<'n> {
         self
     }
 
+    /// # Panics
+    /// If any required parameter is not set
     pub fn build(self) -> Swapchain {
 
-        let surface = self.surface.expect("Surface is required");
-        let instance = self.insatnce.unwrap();
-        let device = self.device.unwrap();
-        let format = self.format.unwrap();
-        let image_color_space = self.image_color_space.unwrap();
-        let resolution = self.resolution.unwrap();
-        let transform = self.transform.unwrap();
-        let present_mode = self.present_mode.unwrap();
+        let surface = self.surface.expect("Missing SurfaceKHR");
+        let instance = self.instance.expect("Missing Vulkan instance");
+        let device = self.device.expect("Missing logical device");
+        let format = self.format.expect("Missing swapchain format");
+        let image_color_space = self.image_color_space.expect("Missing color space");
+        let resolution = self.resolution.expect("Missing resolution");
+        let transform = self.transform.expect("Missing surface transform");
+        let present_mode = self.present_mode.expect("Missing present mode");
 
         let swapchain_create_info = ash::vk::SwapchainCreateInfoKHR::default()
             .surface(*surface)

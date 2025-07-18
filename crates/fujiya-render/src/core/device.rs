@@ -49,9 +49,9 @@ impl<'n> DeviceBuilder<'n> {
 
     pub fn build(self) -> Device {
 
-        let instance = self.insatnce.unwrap();
-        let phys_dev = self.phys_dev.unwrap();
-        let family = self.family.unwrap();
+        let instance = self.insatnce.expect("Instance is missing");
+        let phys_dev = self.phys_dev.expect("Physcial Device is missing");
+        let family = self.family.expect("Queue Family is missing");
 
         let mut priorities: Vec<Vec<f32>> = vec![];
 

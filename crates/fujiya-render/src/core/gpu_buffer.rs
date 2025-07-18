@@ -1,4 +1,4 @@
-use ash::vk;
+use ash::vk::{self, PhysicalDeviceMemoryProperties};
 use crate::{find_memorytype_index, PhysicalDeviceInfo};
 
 pub struct GPUBuffer {
@@ -12,7 +12,7 @@ pub struct GPUBuffer {
 impl GPUBuffer {
     pub fn new(
         device: &ash::Device,
-        physical_device: &PhysicalDeviceInfo,
+        memory_prop: &PhysicalDeviceMemoryProperties,
         size: u64,
         usage: vk::BufferUsageFlags,
         memory_flags: vk::MemoryPropertyFlags,
@@ -31,7 +31,7 @@ impl GPUBuffer {
         // Поиск подходящего типа памяти
         let memory_type_index = find_memorytype_index(
             &req,
-            &physical_device.memory_prop,
+            memory_prop,
             memory_flags,
         ).unwrap();
 

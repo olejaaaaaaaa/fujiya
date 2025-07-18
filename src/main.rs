@@ -3,6 +3,7 @@
 use std::{error::Error, ffi::CStr, fs::{read_dir, write, DirEntry, File}, io::Read, mem::offset_of, panic, process::Command};
 
 use ash::vk::{self, AttachmentReference, BufferUsageFlags, Extent2D, FenceCreateFlags, Format, PhysicalDeviceType, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, API_VERSION_1_0, API_VERSION_1_3};
+use fujiya_sound::enumerate_sound_device;
 use winit::raw_window_handle::*;
 use log::*;
 use winit::{dpi::PhysicalSize, raw_window_handle::HasDisplayHandle};
@@ -185,243 +186,138 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let main_loop = winit::event_loop::EventLoop::new().unwrap();
+    let winit_window = winit::window::Window::new(&main_loop).unwrap();
 
-    let window = winit::window::WindowBuilder::new()
-        .with_title("Game")
-        .with_inner_size(PhysicalSize::new(640, 480))
-        .build(&main_loop)
-        .expect("Error create Window");
-
-    let raw_window_handle = window.window_handle().expect("Error get WindowHandle").as_raw();
-    let raw_display_handle = window.display_handle().expect("Error get DisplayHandle").as_raw();
-
-    let app = AppBuilder::new()
-        .with_api_version(API_VERSION_1_3)
-        .build();
-
-    let window_ext = ash_window::enumerate_required_extensions(raw_display_handle)
-        .unwrap()
-        .iter()
-        .map(|&ptr| unsafe { CStr::from_ptr(ptr) })
-        .collect::<Vec<_>>();
-
-    let instance = InstanceBuilder::new()
-        .with_extensions(window_ext)
-        .with_debug_layers(vec![
-            c"VK_LAYER_KHRONOS_validation"
-        ])
-        .with_debug_extensions(vec![
-            c"VK_EXT_debug_utils",
-            c"VK_EXT_debug_report"
-        ])
-        .with_app_info(&app.raw)
-        .build();
-
-    let surface = SurfaceBuilder::new()
-        .with_entry(&instance.raw_entry)
-        .with_instance(&instance.raw)
-        .with_window_handle(&raw_window_handle)
-        .with_display_handle(&raw_display_handle)
-        .build();
-
-    let phys_dev = PhysicalDeviceBuilder::new()
-        .with_surface(&surface.raw)
-        .with_surface_load(&surface.raw_load)
-        .select_physical_device(|phys_infos: &Vec<PhysicalDeviceInfo>| {
-
-            for (index, info) in phys_infos.iter().enumerate() {
-                if info.support_surface && info.phys_prop.device_type == PhysicalDeviceType::DISCRETE_GPU {
-                    return index
-                }
-            }
-
-            for (index, info) in phys_infos.iter().enumerate() {
-                if info.support_surface && info.phys_prop.device_type == PhysicalDeviceType::INTEGRATED_GPU {
-                    return index
-                }
-            }
-
-            0
+    let device = GraphicsDeviceBuilder::new()
+        .with_app(|| {
+            AppBuilder::new()
+                .with_app_name(c"Marion")
+                .build()
         })
-        .with_insatnce(&instance.raw)
+        .with_window(&winit_window)
+        .with_default_instance();
+
+    let window = WindowManagerBuilder::new(winit_window)
+        .with_default_surface(&device.state.instance);
+
+    let device = device
+        .with_default_phys_dev(&window.state.surface)
+        .with_default_queue_family(&window.state.surface)
         .build();
 
-    let queue_family = QueuesFamilyBuilder::new()
-        .with_queue_family_prop(&phys_dev.phys_info.queue_family_prop)
-        .with_surface(&surface.raw)
-        .with_surface_load(&surface.raw_load)
-        .with_phys_dev(&phys_dev.raw)
-        .build();
+    let window = window
+        .with_default_format(&device.phys_dev)
+        .with_default_mode(&device.phys_dev)
+        .with_default_swapchain(&device.instance, &device.device);
 
-    let device = DeviceBuilder::new()
-        .with_extensions(vec![
-            c"VK_KHR_swapchain"
-        ])
-        .queue_family(&queue_family)
-        .with_instance(&instance.raw)
-        .with_phys_dev(&phys_dev.raw)
-        .build();
+    // let pipeline = StandartGraphicsPipelineBuilder::new()
+    //     .with_fragment_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\ray-tracing-frag.spv"))
+    //     .with_vertex_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
+    //     .with_uniforms()
+    //     .build();
 
-    // Абстрактная очередь, выбирает нужную очередь исходя из требований
-    let queue = UniversalQueue::new(&device.raw, queue_family);
 
-    let formats = surface.get_surface_formats(&phys_dev.raw);
-    let caps = surface.get_surface_capabilities(&phys_dev.raw);
-    let present_modes = surface.get_surface_present_modes(&phys_dev.raw);
-
-    //-----------------------------
-    //Выбор режима отрисовки
-    let present_mode = present_modes.iter()
-    .find_map(|mode| match mode {
-        &PresentModeKHR::FIFO |
-        &PresentModeKHR::MAILBOX => Some(*mode),
-        _ => None
-    })
-    .unwrap_or_else(|| panic!("No supported surface format found"));
-    //-----------------------------
-
-    //-----------------------------
-    // Выбор формата вывода изображений из имеющихся
-   const PRIORITY_FORMATS: &[Format] = &[
-        Format::B8G8R8A8_SRGB,              // 1. Самый предпочтительный
-        Format::R8G8B8A8_SRGB,              // 2. Основной альтернативный
-        Format::B8G8R8A8_UNORM,             // 3. UNORM-версия
-        Format::R8G8B8A8_UNORM,             // 4. Альтернативная UNORM
-        Format::A8B8G8R8_SRGB_PACK32,       // 5. Для мобильных устройств
-        Format::A2B10G10R10_UNORM_PACK32,   // 6. HDR
-    ];
-
-    let format = PRIORITY_FORMATS.iter()
-    .find_map(|priority_fmt| {
-        formats.iter()
-            .find(|sf| sf.format == *priority_fmt)
-            .copied()
-    })
-    .unwrap_or_else(|| {
-        formats.first().copied().unwrap_or_else(|| {
-            panic!("No supported surface format (available: {:?})", formats);
-        })
-    });
+    let mut data = _VERTICES_DATA.to_vec();
 
     //-----------------------------
 
-    let color_space = format.color_space;
-    let format = format.format;
-    let extent = caps.current_extent;
+    // let command_pool = CommandPoolBuilder::new()
+    //     .device(&device.raw)
+    //     .family_index(0)
+    //     .build();
 
-    info!("Режим вывода: {:?}", present_mode);
-    info!("Формат вывода: {:?}, Цветовое пространство: {:?}", format, color_space);
-    info!("Разрешение экрана: {:?}", extent);
+    // let present_images = swapchain.get_swapchain_images();
+    // info!("Количество изображений в Swapchain: {}", present_images.len());
 
-    let swapchain = SwapchainBuilder::new()
-        .with_color_space(color_space)
-        .with_format(format)
-        .with_resolution(extent)
-        .with_transform(caps.supported_transforms)
-        .with_present_mode(present_mode)
-        .with_instance(&instance.raw)
-        .with_device(&device.raw)
-        .with_surface(&surface.raw)
-        .build();
+    // let image_views = ImageViewBuilder::new()
+    //     .with_device(&device.raw)
+    //     .with_format(format)
+    //     .with_image_views(&present_images)
+    //     .build();
 
-    let command_pool = CommandPoolBuilder::new()
-        .device(&device.raw)
-        .family_index(0)
-        .build();
+    // info!("Количество Image Views на буфер: {}", image_views.raw.len());
+    // let shader = ShaderProgramBuilder::new()
+    //     .with_device(&device.raw)
+    //     .with_fragment_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\ray-tracing-frag.spv"))
+    //     .with_vertex_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
+    //     .build();
 
-    let present_images = swapchain.get_swapchain_images();
-    info!("Количество изображений в Swapchain: {}", present_images.len());
+    // let subpass = SubpassBuilder::new()
+    //     .add_color_attachment_ref(
+    //         AttachmentReference::default()
+    //             .attachment(0)
+    //             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    //     )
+    //     .with_bind_point(vk::PipelineBindPoint::GRAPHICS)
+    //     .build();
 
-    let image_views = ImageViewBuilder::new()
-        .with_device(&device.raw)
-        .with_format(format)
-        .with_image_views(&present_images)
-        .build();
+    // let render_pass = RenderPassBuilder::new()
+    //     .with_device(&device.raw)
+    //     .add_subpass(subpass.raw)
+    //     .add_subpass_dependency(
+    //         vk::SubpassDependency {
+    //             src_subpass: vk::SUBPASS_EXTERNAL,
+    //             src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+    //             dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+    //             dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+    //             ..Default::default()
+    //         })
+    //     .add_attachments_desc(vk::AttachmentDescription {
+    //             format: format,
+    //             samples: vk::SampleCountFlags::TYPE_1,
+    //             load_op: vk::AttachmentLoadOp::CLEAR,
+    //             store_op: vk::AttachmentStoreOp::STORE,
+    //             final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+    //             ..Default::default()
+    //         })
+    //     .build();
 
-    info!("Количество Image Views на буфер: {}", image_views.raw.len());
-    let shader = ShaderProgramBuilder::new()
-        .with_device(&device.raw)
-        .with_fragment_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\ray-tracing-frag.spv"))
-        .with_vertex_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
-        .build();
+    // let buffer = GPUBuffer::new(
+    //     &device.raw,
+    //     &phys_dev.phys_info.memory_prop,
+    //     (size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
+    //     BufferUsageFlags::VERTEX_BUFFER,
+    //     vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
+    // ).unwrap();
 
-    let subpass = SubpassBuilder::new()
-        .add_color_attachment_ref(
-            AttachmentReference::default()
-                .attachment(0)
-                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        )
-        .with_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .build();
+    // let binding_description = Vertex::get_binding_descriptions();
+    // let attribute_description = Vertex::get_attribute_descriptions();
 
-    let render_pass = RenderPassBuilder::new()
-        .with_device(&device.raw)
-        .add_subpass(subpass.raw)
-        .add_subpass_dependency(
-            vk::SubpassDependency {
-                src_subpass: vk::SUBPASS_EXTERNAL,
-                src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                ..Default::default()
-            })
-        .add_attachments_desc(vk::AttachmentDescription {
-                format: format,
-                samples: vk::SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                store_op: vk::AttachmentStoreOp::STORE,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                ..Default::default()
-            })
-        .build();
+    // let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+    //     .vertex_attribute_descriptions(&attribute_description)
+    //     .vertex_binding_descriptions(&binding_description);
 
+    // let pipeline = RenderPipelineBuilder::new()
+    //     .with_vertex_shader(shader.vertex_shader)
+    //     .with_fragment_shader(shader.fragment_shader)
+    //     .with_resolution(extent)
+    //     .with_format(format)
+    //     .with_vertex_input_info(vertex_input_state_info)
+    //     .with_input_assembly_info(
+    //         vk::PipelineInputAssemblyStateCreateInfo::default()
+    //                     .topology(PrimitiveTopology::TRIANGLE_STRIP)
+    //                     .primitive_restart_enable(false)
+    //     )
+    //     .with_render_pass(&render_pass.raw)
+    //     .with_device(&device.raw)
+    //     .build();
 
-    let buffer = GPUBuffer::new(
-        &device.raw,
-        &phys_dev.phys_info,
-        (std::mem::size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
-        BufferUsageFlags::VERTEX_BUFFER,
-        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
-    ).unwrap();
+    // let framebuffers = FrameBufferBuilder::new()
+    //     .device(&device.raw)
+    //     .image_views(&image_views.raw)
+    //     .resolution(caps.current_extent)
+    //     .render_pass(&render_pass.raw)
+    //     .build();
 
-    buffer.upload_data(&device.raw, &_VERTICES_DATA);
+    // info!("Количество FrameBuffers: {}", framebuffers.frame_buffers.len());
 
-    let binding_description = Vertex::get_binding_descriptions();
-    let attribute_description = Vertex::get_attribute_descriptions();
+    // //enumerate_sound_device();
 
-    let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-        .vertex_attribute_descriptions(&attribute_description)
-        .vertex_binding_descriptions(&binding_description);
+    // let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.raw);
+    // let fence_info = vk::FenceCreateInfo::default()
+    //     .flags(FenceCreateFlags::SIGNALED);
 
-    let pipeline = RenderPipelineBuilder::new()
-        .with_vertex_shader(shader.vertex_shader)
-        .with_fragment_shader(shader.fragment_shader)
-        .with_resolution(extent)
-        .with_format(format)
-        .with_vertex_input_info(vertex_input_state_info)
-        .with_input_assembly_info(
-            vk::PipelineInputAssemblyStateCreateInfo::default()
-                        .topology(PrimitiveTopology::TRIANGLE_STRIP)
-                        .primitive_restart_enable(false)
-        )
-        .with_render_pass(&render_pass.raw)
-        .with_device(&device.raw)
-        .build();
-
-    let framebuffers = FrameBufferBuilder::new()
-        .device(&device.raw)
-        .image_views(&image_views.raw)
-        .resolution(caps.current_extent)
-        .render_pass(&render_pass.raw)
-        .build();
-
-    info!("Количество FrameBuffers: {}", framebuffers.frame_buffers.len());
-
-    let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.raw);
-    let fence_info = vk::FenceCreateInfo::default()
-        .flags(FenceCreateFlags::SIGNALED);
-
-    let fence = unsafe { device.raw.create_fence(&fence_info, None).unwrap() };
+    // let fence = unsafe { device.raw.create_fence(&fence_info, None).unwrap() };
 
     let _ = main_loop.run(|ev, ev_window| {
     match ev {
@@ -433,19 +329,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             winit::event::WindowEvent::CloseRequested => ev_window.exit(),
             winit::event::WindowEvent::RedrawRequested => {
-                let _ = draw_frame(
-                    &device.raw,
-                    &queue.raw[0][0],
-                    &swapchain,
-                    &command_pool,
-                    &buffer.buffer,
-                    &pipeline.raw,
-                    &render_pass,
-                    &framebuffers.frame_buffers,
-                    image_available_semaphore,
-                    render_finished_semaphore,
-                    fence
-                );
+
+                // for i in &mut data {
+                //     i.pos[0] += 0.001;
+                //     i.pos[1] -= 0.001;
+                // }
+
+                // buffer.upload_data(&device.raw, &data);
+
+                // let _ = draw_frame(
+                //     &device.raw,
+                //     &queue.raw[0][0],
+                //     &swapchain,
+                //     &command_pool,
+                //     &buffer.buffer,
+                //     &pipeline.raw,
+                //     &render_pass,
+                //     &framebuffers.frame_buffers,
+                //     image_available_semaphore,
+                //     render_finished_semaphore,
+                //     fence
+                // );
             }
             winit::event::WindowEvent::Resized(_) => {
 
@@ -453,7 +357,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => {}
         },
         winit::event::Event::AboutToWait => {
-            window.request_redraw();
+            //window.request_redraw();
         }
         _ => {}
     }

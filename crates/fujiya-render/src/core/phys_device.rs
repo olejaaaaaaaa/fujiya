@@ -1,6 +1,8 @@
 use ash::vk::*;
 use log::{debug, info};
 
+use crate::total_vram;
+
 pub struct PhysicalDevice {
     pub raw: ash::vk::PhysicalDevice,
     pub phys_info: PhysicalDeviceInfo
@@ -82,7 +84,7 @@ impl<'n> PhysicalDeviceBuilder<'n> {
         self
     }
 
-    pub fn with_insatnce(mut self, instance: &'n ash::Instance) -> Self {
+    pub fn with_instance(mut self, instance: &'n ash::Instance) -> Self {
         self.instance = Some(instance);
         self
     }
@@ -100,27 +102,23 @@ impl<'n> PhysicalDeviceBuilder<'n> {
             }
         }
 
-        // let func = self.fn_suitable_device.unwrap();
-        let phys_dev = phys_devs[0];
-        let phys_info = &phys_infos[0];
+        let index = self.fn_select_phys_dev.unwrap_or(Box::new(|_| 0))(&phys_infos);
+        let phys_dev = phys_devs[index];
+        let phys_info = &phys_infos[index];
 
-        // let index = func(&phys_info);
-        // let phys_dev = phys_devs[index];
-        // let phys_info = phys_info[index].clone();
-
-        // let vram = vram(phys_info);
-        // debug!(
-        //     "\nGPU NAME:        {:?}\
-        //     \nTYPE:             {:?}\
-        //     \nDRIVER VERSION:   {:?}\
-        //     \nVRAM:             {:?}MB\
-        //     \nAPI VERSION:      {:?}",
-        //     phys_info.phys_prop.device_name_as_c_str().unwrap(),
-        //     phys_info.phys_prop.device_type,
-        //     phys_info.phys_prop.driver_version,
-        //     vram / (1024 * 1024),
-        //     phys_info.phys_prop.api_version
-        // );
+        let vram = total_vram(phys_info);
+        debug!(
+            "\nGPU NAME:        {:?}\
+            \nTYPE:             {:?}\
+            \nDRIVER VERSION:   {:?}\
+            \nVRAM:             {:?}MB\
+            \nAPI VERSION:      {:?}",
+            phys_info.phys_prop.device_name_as_c_str().unwrap(),
+            phys_info.phys_prop.device_type,
+            phys_info.phys_prop.driver_version,
+            vram / (1024 * 1024),
+            phys_info.phys_prop.api_version
+        );
 
         PhysicalDevice { raw: phys_dev, phys_info: phys_info.clone() }
     }

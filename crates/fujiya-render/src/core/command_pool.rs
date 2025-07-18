@@ -5,7 +5,7 @@ pub struct CommandPool {
 }
 
 impl CommandPool {
-    pub fn create_buffers(&self, device: &ash::Device, count: u32, level: CommandBufferLevel) -> Vec<CommandBuffer>{
+    pub fn create_command_buffers(&self, device: &ash::Device, count: u32, level: CommandBufferLevel) -> Vec<CommandBuffer>{
 
         let allocate_info = CommandBufferAllocateInfo::default()
             .command_buffer_count(count)
