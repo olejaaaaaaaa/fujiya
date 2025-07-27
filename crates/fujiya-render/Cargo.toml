@@ -1,0 +1,12 @@
+[package]
+name = "fujiya-render"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ash = { version = "0.38.0",  features = ["debug", "std"] }
+ash-window = "0.13.0"
+winit = { version = "0.29", features = ["rwh_06"] }
+log = "0.4"
+env_logger = { version = "0.11.8", features = ["color"] }
+cfg-if = { version = "1" }

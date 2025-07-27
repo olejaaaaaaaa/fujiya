@@ -1,11 +1,19 @@
 [package]
-name = "banan"
+name = "fujiya"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
+fujiya-render = { path = "crates/fujiya-render" }
+fujiya-macros = { path = "crates/fujiya-macros" }
+fujiya-sound  = { path = "crates/fujiya-sound"  }
+fujiya-graph  = { path = "crates/fujiya-graph"  }
+fujiya-assets = { path = "crates/fujiya-assets" }
 ash = { version = "0.38.0",  features = ["debug", "std"] }
 ash-window = "0.13.0"
 winit = { version = "0.29", features = ["rwh_06"] }
 log = "0.4"
 env_logger = { version = "0.11.8", features = ["color"] }
+gpu-allocator = { version = "0.27.0", features = ["vulkan"] }
+cfg-if = { version = "1" }
