@@ -7,8 +7,9 @@ build = "build.rs"
 [dependencies]
 fujiya-render = { path = "crates/fujiya-render" }
 fujiya-macros = { path = "crates/fujiya-macros" }
-fujiya-sound  = { path = "crates/fujiya-sound" }
-fujiya-graph  = { path = "crates/fujiya-graph" }
+fujiya-sound  = { path = "crates/fujiya-sound"  }
+fujiya-graph  = { path = "crates/fujiya-graph"  }
+fujiya-assets = { path = "crates/fujiya-assets" }
 ash = { version = "0.38.0",  features = ["debug", "std"] }
 ash-window = "0.13.0"
 winit = { version = "0.29", features = ["rwh_06"] }

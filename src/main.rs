@@ -12,7 +12,7 @@ use fujiya_render::*;
 use fujiya_macros::Vertex;
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct Vertex {
     pos: [f32; 3],
     color: [f32; 3],
@@ -53,6 +53,7 @@ const _VERTICES_DATA: [Vertex; 3] = [
 ];
 
 use fujiya_graph::*;
+use fujiya_assets::{load_mesh_data, open_gltf};
 
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -63,6 +64,23 @@ struct UniformBufferObject {
     projection: [[f32; 4]; 4],
 }
 
+
+fn apply_isometric_transform(vertex: [f32; 3]) -> [f32; 3] {
+    let angle_y = 45.0f32.to_radians();
+    let angle_x = 35.264f32.to_radians();
+    
+    // Поворот
+    let (sin_y, cos_y) = angle_y.sin_cos();
+    let x = vertex[0] * cos_y - vertex[2] * sin_y;
+    let z = vertex[0] * sin_y + vertex[2] * cos_y;
+    
+    let (sin_x, cos_x) = angle_x.sin_cos();
+    let y = vertex[1] * cos_x - z * sin_x;
+    let z = vertex[1] * sin_x + z * cos_x;
+    
+    // Смещаем Z в положительный диапазон для Vulkan
+    [x, y, z + 0.5] // +0.5 чтобы центрировать
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
 
@@ -171,7 +189,36 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_vertex_shader(load_spv(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
         .build(layout[0]);
 
-    let mut data = _VERTICES_DATA.to_vec();
+    let (gltf, index) = &load_mesh_data(&open_gltf("./shared/assets/models/box.glb").unwrap())[0];
+
+    let mut data: Vec<Vertex> = vec![];
+
+    let mut color = [0.2, 0.2, 0.0];
+    let mut count = 0;
+
+    for vertex in gltf {
+
+        let mut v = *vertex;
+        v[0] /= 2.0;
+        v[1] /= 2.0;
+        v[2] /= 2.0;
+
+        v = apply_isometric_transform(v);
+
+        if count % 3 == 0 {
+            count = 0;
+            color[0] += 0.01;
+            color[1] += 0.01;
+            color[2] += 0.01;
+        } else {
+            count += 1;
+        }
+
+        data.push(Vertex {
+            pos: v, // Y остаётся без изменений
+            color
+        });
+    }
 
     let command_pool = CommandPoolBuilder::new()
         .device(&ctx.graphics_device.device.raw)
@@ -181,39 +228,41 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gpu_buffer = GPUBuffer::new(
         &ctx.graphics_device.device.raw,
         &ctx.graphics_device.phys_dev.phys_info.memory_prop,
-        (size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
+        (size_of::<Vertex>() * data.len()) as u64,
         BufferUsageFlags::VERTEX_BUFFER,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
     ).unwrap();
 
     gpu_buffer.upload_data(ctx.graphics_device.raw_device(), &data);
 
-    let mut graph = RenderGraph::new();
-    graph.register_command_pool("pool", command_pool);
-    graph.register_buffer("buf", gpu_buffer);
-    graph.register_pipeline("pipe", pipeline);
+    println!("{:?}", index.len() as u64);
 
-    let gpu_buffer2 = GPUBuffer::new(
-        &ctx.graphics_device.raw_device(),
+    let index_buffer = GPUBuffer::new(
+        &ctx.graphics_device.device.raw,
         &ctx.graphics_device.phys_dev.phys_info.memory_prop,
-        (size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
-        BufferUsageFlags::VERTEX_BUFFER,
+        (std::mem::size_of::<u32>() * index.len()) as u64,
+        BufferUsageFlags::INDEX_BUFFER,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
     ).unwrap();
 
-    for i in &mut data {
-        i.pos[0] += 0.5;
-    }
+    index_buffer.upload_data(ctx.graphics_device.raw_device(), &index);
 
-    gpu_buffer2.upload_data(ctx.graphics_device.raw_device(), &data);
-    graph.register_buffer("buf2", gpu_buffer2);
+    println!("Vertex count: {}", data.len());
+    println!("vertex: {:?}", data);
+    println!("Index count: {}", index.len());
+    println!("First 3 indices: {:?}", &index);
 
-
+    //------------------------------
+    let mut graph = RenderGraph::new();
+    graph.register_command_pool("pool", command_pool);
+    graph.register_buffer("buf", gpu_buffer);
+    graph.register_buffer("index_buf", index_buffer);
+    graph.register_pipeline("pipe", pipeline);
     graph.add_raw_pass("Simple", |res, ctx, image_index| {
 
         let device = ctx.graphics_device.raw_device();
         let buffer = res.buffers.get("buf").ok_or("ERR")?;
-        let buffer2 = res.buffers.get("buf2").ok_or("ERR")?;
+        let index_buffer = res.buffers.get("index_buf").ok_or("ERR")?;
         let pipeline = res.pipeline.get("pipe").ok_or("ERR")?;
         let command_pool = res.command_pool.get("pool").ok_or("ERR")?;
         let command_buffer = command_pool.create_command_buffers(device, 1, CommandBufferLevel::PRIMARY)[0];
@@ -258,18 +307,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
 
             device.cmd_bind_vertex_buffers(command_buffer, 0, &[buffer.raw], &[0]);
-            device.cmd_draw(command_buffer, 3, 1, 0, 0);
-            device.cmd_bind_vertex_buffers(command_buffer, 0, &[buffer2.raw], &[0]);
-            device.cmd_draw(command_buffer, 3, 1, 0, 0);
-            device.cmd_end_render_pass(command_buffer);
+            device.cmd_bind_index_buffer(command_buffer, index_buffer.raw, 0, vk::IndexType::UINT32);
+            device.cmd_draw_indexed(
+                command_buffer,
+                36, // Для куба обычно 36 индексов (12 треугольников × 3 вершины)
+                1,  // instance count
+                0,  // first index
+                0,  // vertex offset
+                0   // first instance
+            );
 
+            //device.cmd_draw(command_buffer, 36, 1, 0, 0);
+            device.cmd_end_render_pass(command_buffer);
             device.end_command_buffer(command_buffer)
                 .expect("Failed to end command buffer");
-
         }
 
         res.command_buffers.push(command_buffer);
-
         Ok(())
     });
 

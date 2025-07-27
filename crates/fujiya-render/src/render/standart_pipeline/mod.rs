@@ -135,7 +135,7 @@ impl<'n> StandartPipelineBuilder<'n> {
             .with_vertex_input_info(vertex_input_state_info)
             .with_input_assembly_info(
                 vk::PipelineInputAssemblyStateCreateInfo::default()
-                            .topology(PrimitiveTopology::TRIANGLE_STRIP)
+                            .topology(PrimitiveTopology::TRIANGLE_LIST)
                             .primitive_restart_enable(false)
             )
             .with_render_pass(&render_pass.raw)

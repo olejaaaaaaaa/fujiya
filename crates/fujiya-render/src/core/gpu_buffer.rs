@@ -75,7 +75,7 @@ impl GPUBuffer {
     pub fn upload_data<T: Copy>(&self, device: &ash::Device, data: &[T]) {
 
         let data_size = (std::mem::size_of_val(data)) as u64;
-        assert!(data_size <= self.size, "Data too large for buffer");
+        assert!(data_size <= self.size, "Data too large for buffer {:?} > {:?}", data_size, self.size);
 
         let ptr = unsafe {
             device.map_memory(
