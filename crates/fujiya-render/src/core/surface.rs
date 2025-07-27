@@ -30,6 +30,7 @@ pub struct SurfaceBuilder<'n> {
     instance: Option<&'n ash::Instance>,
     window_handle: Option<&'n RawWindowHandle>,
     display_handle: Option<&'n RawDisplayHandle>,
+    #[allow(dead_code)]
     allocation: ()
 }
 

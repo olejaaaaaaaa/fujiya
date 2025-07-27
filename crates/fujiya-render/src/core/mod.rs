@@ -15,6 +15,8 @@ pub(crate) mod pipeline;
 pub(crate) mod sync;
 pub(crate) mod frame_buffers;
 pub(crate) mod gpu_buffer;
+pub(crate) mod descriptor_pool;
+pub(crate) mod descriptor_set_layout;
 
 pub use app::*;
 pub use instance::*;
@@ -32,3 +34,5 @@ pub use pipeline::*;
 pub use sync::*;
 pub use frame_buffers::*;
 pub use gpu_buffer::*;
+pub use descriptor_pool::*;
+pub use descriptor_set_layout::*;

@@ -1,7 +1,7 @@
 
 use std::ffi::CStr;
 use ash::{Entry, vk::*};
-use log::{info, debug, warn};
+use log::{debug};
 
 ///
 /// InstanceBuilder - Contains all members for creation ash::vk::Instance
@@ -39,7 +39,6 @@ impl<'n> InstanceBuilder<'n> {
         Self { ..Default::default() }
     }
 
-    #[must_use]
     pub fn with_app_info(mut self, app_info: &ApplicationInfo<'n>) -> Self {
         self.app_info = Some(*app_info);
         self
@@ -77,7 +76,7 @@ impl<'n> InstanceBuilder<'n> {
 
     pub fn build(self) -> Instance {
 
-        let entry = unsafe { Entry::load().unwrap() };
+        let entry = unsafe { Entry::load().expect("Not found vulkan on this device") };
         let app_info = self.app_info.expect("App info is required");
         let flags = self.flags.unwrap_or(InstanceCreateFlags::default());
         let mut layers = self.layers;
@@ -105,7 +104,10 @@ impl<'n> InstanceBuilder<'n> {
             .flags(flags);
 
         let instance = unsafe { entry.create_instance(&create_info, None).expect("Error create Instance") };
-        Instance { raw: instance, raw_entry: entry }
+        Instance {
+            raw: instance,
+            raw_entry: entry
+        }
     }
 
 }

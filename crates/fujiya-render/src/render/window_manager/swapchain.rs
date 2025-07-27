@@ -1,19 +1,19 @@
 use ash::vk::{PresentModeKHR, SurfaceCapabilitiesKHR, SurfaceFormatKHR};
-use log::warn;
 use winit::window::Window;
 
-use crate::{ Device, Instance, Surface, Swapchain, SwapchainBuilder, WindowManagerBuilder, WithFormat, WithModeAndCaps };
-use crate::PhysicalDevice;
+use crate::{ Device, Instance, Surface, Swapchain, SwapchainBuilder, WindowManagerBuilder, WithMode };
+
 
 pub struct WithSwapchain {
     pub window: Window,
     pub surface: Surface,
     pub format: SurfaceFormatKHR,
+    pub caps: SurfaceCapabilitiesKHR,
     pub mode: PresentModeKHR,
     pub swapchain: Swapchain
 }
 
-impl WindowManagerBuilder<WithModeAndCaps> {
+impl WindowManagerBuilder<WithMode> {
     pub fn with_swapchain<F>(self, instance: &Instance, device: &Device, build_fn: F) -> WindowManagerBuilder<WithSwapchain>
         where F: FnOnce(&Surface, &SurfaceFormatKHR, &PresentModeKHR, &SurfaceCapabilitiesKHR) -> Swapchain {
 
@@ -29,6 +29,7 @@ impl WindowManagerBuilder<WithModeAndCaps> {
                 surface: self.state.surface,
                 format: self.state.format,
                 mode: self.state.mode,
+                caps: self.state.caps,
                 swapchain
             }}
     }
@@ -38,6 +39,8 @@ impl WindowManagerBuilder<WithModeAndCaps> {
 
             let extent = caps.current_extent;
             let transform = caps.current_transform;
+
+            log::info!("{:?}", extent);
 
             SwapchainBuilder::new()
                 .with_color_space(format.color_space)

@@ -14,7 +14,7 @@ use ash::vk::{
 /// - `swapchain`: Raw Vulkan swapchain handle
 /// - `swapchain_load`: Loaded swapchain extension functions
 pub struct Swapchain {
-    pub swapchain: SwapchainKHR,
+    pub raw: SwapchainKHR,
     pub swapchain_load: ash::khr::swapchain::Device
 }
 
@@ -23,7 +23,7 @@ impl Swapchain {
     /// Get Current swapchain images
     ///
     pub fn get_swapchain_images(&self) -> Vec<Image> {
-        let images = unsafe { self.swapchain_load.get_swapchain_images(self.swapchain).expect("Failed to get swapchain images") };
+        let images = unsafe { self.swapchain_load.get_swapchain_images(self.raw).expect("Failed to get swapchain images") };
         images
     }
 }
@@ -102,6 +102,8 @@ impl<'n> SwapchainBuilder<'n> {
         let transform = self.transform.expect("Missing surface transform");
         let present_mode = self.present_mode.expect("Missing present mode");
 
+        log::info!("{:?}", resolution);
+
         let swapchain_create_info = ash::vk::SwapchainCreateInfoKHR::default()
             .surface(*surface)
             .min_image_count(2)
@@ -119,6 +121,6 @@ impl<'n> SwapchainBuilder<'n> {
         let swapchain_load = ash::khr::swapchain::Device::new(instance, device);
         let swapchain = unsafe { swapchain_load.create_swapchain(&swapchain_create_info, None).unwrap() };
 
-        Swapchain { swapchain, swapchain_load }
+        Swapchain { raw: swapchain, swapchain_load }
     }
 }

@@ -1,15 +1,37 @@
 use ash::vk::{self, PhysicalDeviceMemoryProperties};
-use crate::{find_memorytype_index, PhysicalDeviceInfo};
+use log::warn;
+use crate::{find_memorytype_index};
 
+///
+/// Wraper around [`ash::vk::Buffer`] for simple use
+/// # Panic
+/// if size == 0
+///
+/// # Example:
+///
+/// ```
+/// fn main() {
+///     let uniform_buffer = GPUBuffer::new(
+///         &device.raw,
+///         &memory_prop,
+///         buffer_size,
+///         vk::BufferUsageFlags::UNIFORM_BUFFER,
+///         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+///     ).unwrap();
+///
+///     uniform_buffer.upload_data(&ctx.graphics_device.device.raw, &[data]);
+/// }
+/// ```
+///
 pub struct GPUBuffer {
-    pub buffer: vk::Buffer,
-    memory: vk::DeviceMemory,
-    size: u64,
-    memory_type_index: u32,
-    allocation: ()
+    pub raw: vk::Buffer,
+    pub memory: vk::DeviceMemory,
+    pub size: u64,
 }
 
 impl GPUBuffer {
+
+    /// Create [`GPUBuffer`]
     pub fn new(
         device: &ash::Device,
         memory_prop: &PhysicalDeviceMemoryProperties,
@@ -17,58 +39,53 @@ impl GPUBuffer {
         usage: vk::BufferUsageFlags,
         memory_flags: vk::MemoryPropertyFlags,
     ) -> Result<Self, vk::Result> {
-        // Создание буфера
+
+        // Buffer with size 0? WTF?
+        assert_ne!(size, 0);
+
         let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let buffer = unsafe { device.create_buffer(&buffer_info, None)? };
-
-        // Получение требований к памяти
         let req = unsafe { device.get_buffer_memory_requirements(buffer) };
 
-        // Поиск подходящего типа памяти
         let memory_type_index = find_memorytype_index(
             &req,
             memory_prop,
             memory_flags,
         ).unwrap();
 
-        // Выделение памяти
         let alloc_info = vk::MemoryAllocateInfo::default()
             .allocation_size(req.size)
             .memory_type_index(memory_type_index);
 
         let memory = unsafe { device.allocate_memory(&alloc_info, None)? };
-
-        // Привязка памяти к буферу
         unsafe { device.bind_buffer_memory(buffer, memory, 0)? };
 
         Ok(Self {
-            buffer,
+            raw: buffer,
             memory,
             size,
-            memory_type_index,
-            allocation: ()
         })
     }
 
+    /// Upload data into GPU Memory
     pub fn upload_data<T: Copy>(&self, device: &ash::Device, data: &[T]) {
+
         let data_size = (std::mem::size_of_val(data)) as u64;
         assert!(data_size <= self.size, "Data too large for buffer");
 
-        // Отображение памяти
         let ptr = unsafe {
             device.map_memory(
                 self.memory,
                 0,
                 data_size,
                 vk::MemoryMapFlags::empty(),
-            ).unwrap()
+            ).expect("Error map memory")
         };
 
-        // Копирование данных
         unsafe {
             std::ptr::copy_nonoverlapping(
                 data.as_ptr() as *const u8,
@@ -80,4 +97,13 @@ impl GPUBuffer {
         unsafe { device.unmap_memory(self.memory) };
     }
 
+}
+
+
+impl Drop for GPUBuffer {
+    fn drop(&mut self) {
+        if self.size != 0 {
+            warn!("Memory Leak");
+        }
+    }
 }

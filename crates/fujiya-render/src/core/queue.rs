@@ -1,4 +1,4 @@
-use ash::vk::PhysicalDevice;
+use ash::vk::{PhysicalDevice, QueueFlags};
 
 
 
@@ -71,6 +71,28 @@ pub struct UniversalQueue {
 }
 
 impl UniversalQueue {
+
+    pub fn raw_graphics(&self) -> ash::vk::Queue {
+
+        for (index, queue_family) in self.queue_family.iter().enumerate() {
+            if queue_family.supports_present && queue_family.properties.queue_flags.contains(QueueFlags::GRAPHICS) {
+                return self.raw[index][0]
+            }
+        }
+
+        panic!("Not found Graphics Queue")
+    }
+
+    pub fn graphics_index(&self) -> u32 {
+
+        for (index, queue_family) in self.queue_family.iter().enumerate() {
+            if queue_family.supports_present && queue_family.properties.queue_flags.contains(QueueFlags::GRAPHICS) {
+                return index as u32
+            }
+        }
+
+        panic!("Not found Graphics Index")
+    }
 
     pub fn new(device: &ash::Device, family: Vec<QueueFamily>) -> Self {
 

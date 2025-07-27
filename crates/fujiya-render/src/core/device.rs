@@ -14,6 +14,7 @@ pub struct DeviceBuilder<'n> {
     family: Option<&'n Vec<QueueFamily>>,
     insatnce: Option<&'n ash::Instance>,
     phys_dev: Option<&'n ash::vk::PhysicalDevice>,
+    #[allow(dead_code)]
     allocation: ()
 }
 

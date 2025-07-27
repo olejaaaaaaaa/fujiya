@@ -59,7 +59,7 @@ pub fn total_vram(info: &PhysicalDeviceInfo) -> usize {
         .sum()
 }
 
-pub fn load_from_file(path: &str) -> Vec<u32> {
+pub fn load_spv(path: &str) -> Vec<u32> {
 
     let time = std::time::Instant::now();
     let mut file = File::open(path).unwrap();

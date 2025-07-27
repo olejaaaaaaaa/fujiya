@@ -15,7 +15,7 @@ const float lightIntensity = 15.0;
 const vec3 cameraPos = vec3(5.0, 2.0, -1.0);
 const vec3 cameraTarget = vec3(-1.0, 0.5, 0.0);
 const vec3 lightOrigin = vec3(3.0, 5.0, -1.0);
-const vec2 resolution = vec2(840.0, 480.0);
+const vec2 resolution = vec2(1280.0, 720.0);
 const float time = 0.0; // Для статичной сцены
 
 // Структура для пересечений

@@ -1,5 +1,5 @@
 use ash::vk::*;
-use log::{debug, info};
+use log::{debug};
 
 use crate::total_vram;
 
@@ -77,10 +77,10 @@ impl<'n> PhysicalDeviceBuilder<'n> {
         }
     }
 
-    pub fn select_physical_device<F>(mut self, Fn: F) -> Self
+    pub fn select_physical_device<F>(mut self, choose_device: F) -> Self
     where F: FnOnce(&Vec<PhysicalDeviceInfo>) -> usize + 'static
     {
-        self.fn_select_phys_dev = Some(Box::new(Fn));
+        self.fn_select_phys_dev = Some(Box::new(choose_device));
         self
     }
 

@@ -15,6 +15,7 @@ pub(crate) mod queue_family;
 pub use queue_family::*;
 
 pub(crate) mod device;
+#[allow(unused_imports)]
 pub use device::*;
 
 use crate::{
@@ -32,6 +33,11 @@ pub struct GraphicsDevice {
     pub instance: Instance,
     pub phys_dev: PhysicalDevice,
     pub device: Device,
-    pub universal_queue: UniversalQueue
+    pub universal_queue: UniversalQueue,
 }
 
+impl GraphicsDevice {
+    pub fn raw_device(&self) -> &ash::Device {
+        &self.device.raw
+    }
+}

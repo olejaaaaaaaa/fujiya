@@ -1,8 +1,8 @@
 #![warn(unused_qualifications)]
 
-use std::{error::Error, ffi::CStr, fs::{read_dir, write, DirEntry, File}, io::Read, mem::offset_of, panic, process::Command};
+use std::{collections::HashMap, error::Error, ffi::CStr, fs::{read_dir, write, DirEntry, File}, io::Read, mem::offset_of, panic, process::Command, rc::Rc, time::Instant, u64};
 
-use ash::vk::{self, AttachmentReference, BufferUsageFlags, Extent2D, FenceCreateFlags, Format, PhysicalDeviceType, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, API_VERSION_1_0, API_VERSION_1_3};
+use ash::vk::{self, AttachmentReference, BufferUsageFlags, CommandBuffer, CommandBufferLevel, Extent2D, Fence, FenceCreateFlags, Format, PhysicalDeviceType, PresentModeKHR, PrimitiveTopology, SurfaceFormatKHR, VertexInputAttributeDescription, VertexInputBindingDescription, API_VERSION_1_0, API_VERSION_1_3};
 use fujiya_sound::enumerate_sound_device;
 use winit::raw_window_handle::*;
 use log::*;
@@ -19,6 +19,7 @@ struct Vertex {
 }
 
 impl Vertex {
+
     fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
         [vk::VertexInputBindingDescription {
             binding: 0,
@@ -45,138 +46,21 @@ impl Vertex {
     }
 }
 
-const _VERTICES_DATA: [Vertex; 5] = [
-    // Передняя грань (красная)
-    Vertex { pos: [-0.5, -0.5,  0.5], color: [1.0, 0.0, 0.0] },
-    Vertex { pos: [ 0.5, -0.5,  0.5], color: [1.0, 0.0, 0.0] },
-    Vertex { pos: [ 0.5,  0.5,  0.5], color: [1.0, 0.0, 0.0] },
-    Vertex { pos: [-0.5,  0.5,  0.5], color: [1.0, 0.0, 0.0] },
-    Vertex { pos: [-0.5, -0.5,  0.5], color: [1.0, 0.0, 0.0] },
+const _VERTICES_DATA: [Vertex; 3] = [
+    Vertex { pos: [0.0, 0.5,  0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { pos: [ -0.5, -0.5,  0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { pos: [ 0.5,  -0.5,  0.0], color: [0.0, 0.0, 1.0] },
 ];
 
+use fujiya_graph::*;
 
-fn draw_frame(
-    device: &ash::Device,
-    queue: &ash::vk::Queue,
-    swapchain: &Swapchain,
-    command_pool: &CommandPool,
-    buffer: &ash::vk::Buffer,
-    pipeline: &vk::Pipeline,
-    render_pass: &RenderPass,
-    framebuffers: &[vk::Framebuffer],
-    image_available_semaphore: vk::Semaphore,
-    render_finished_semaphore: vk::Semaphore,
-    in_flight_fence: vk::Fence,
-) -> Result<(), vk::Result> {
 
-    unsafe {
-        // Ждём завершения предыдущего кадра
-        device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
-        device.reset_fences(&[in_flight_fence])?;
-    }
-
-    // Получаем индекс изображения swapchain
-    let (image_index, _) = unsafe {
-        swapchain.swapchain_load.acquire_next_image(
-            swapchain.swapchain,
-            u64::MAX,
-            image_available_semaphore,
-            vk::Fence::null(),
-        )
-    }?;
-
-    //info!("{}", image_index);
-
-    // Записываем команды
-    let command_buffer = {
-        let allocate_info = vk::CommandBufferAllocateInfo::default()
-            .command_pool(command_pool.raw)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(1);
-
-        let buffers = unsafe { device.allocate_command_buffers(&allocate_info) }?;
-        buffers[0]
-    };
-
-    // Начинаем запись команд
-    unsafe {
-        device.begin_command_buffer(
-            command_buffer,
-            &vk::CommandBufferBeginInfo::default()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-        )?;
-    }
-
-    // Очистка и рендер-пасс
-    let clear_values = [vk::ClearValue {
-        color: vk::ClearColorValue {
-            float32: [0.0, 0.0, 0.0, 1.0],
-        },
-    }];
-
-    let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-        .render_pass(render_pass.raw)
-        .framebuffer(framebuffers[image_index as usize])
-        .render_area(vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: Extent2D { width: 640, height: 480 },
-        })
-        .clear_values(&clear_values);
-
-    unsafe {
-        device.cmd_begin_render_pass(
-            command_buffer,
-            &render_pass_begin_info,
-            vk::SubpassContents::INLINE,
-        );
-
-        device.cmd_bind_pipeline(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            *pipeline,
-        );
-
-        device.cmd_bind_vertex_buffers(command_buffer, 0, &[*buffer], &[0]);
-        device.cmd_draw(command_buffer, _VERTICES_DATA.len() as u32, 1, 0, 0);
-        device.cmd_end_render_pass(command_buffer);
-        device.end_command_buffer(command_buffer)?;
-    }
-
-    // Отправляем в очередь
-    let binding_sema = [image_available_semaphore];
-    let binding_biffers = [command_buffer];
-    let binding = [render_finished_semaphore];
-
-    let submit_info = vk::SubmitInfo::default()
-        .wait_semaphores(&binding_sema)
-        .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-        .command_buffers(&binding_biffers)
-        .signal_semaphores(&binding);
-
-    unsafe {
-        device.queue_submit(
-            *queue,
-            &[submit_info],
-            in_flight_fence,
-        )?;
-    }
-
-    // Представляем изображение
-    let binding1 = [render_finished_semaphore];
-    let binding2 = [swapchain.swapchain];
-    let binding3 = [image_index];
-
-    let present_info = vk::PresentInfoKHR::default()
-        .wait_semaphores(&binding1)
-        .swapchains(&binding2)
-        .image_indices(&binding3);
-
-    unsafe {
-        swapchain.swapchain_load.queue_present(*queue, &present_info)?;
-        device.device_wait_idle()?;
-    }
-
-    Ok(())
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+struct UniformBufferObject {
+    model: [[f32; 4]; 4],
+    view: [[f32; 4]; 4],
+    projection: [[f32; 4]; 4],
 }
 
 
@@ -186,140 +70,212 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let main_loop = winit::event_loop::EventLoop::new().unwrap();
-    let winit_window = winit::window::Window::new(&main_loop).unwrap();
+    let window = winit::window::WindowBuilder::new()
+        .with_inner_size(PhysicalSize::new(800, 600))
+        .with_title("Game")
+        .build(&main_loop)
+        .unwrap();
 
-    let device = GraphicsDeviceBuilder::new()
-        .with_app(|| {
-            AppBuilder::new()
-                .with_app_name(c"Marion")
-                .build()
-        })
-        .with_window(&winit_window)
-        .with_default_instance();
+    let ctx: RenderContext = RenderContext::default(window);
 
-    let window = WindowManagerBuilder::new(winit_window)
-        .with_default_surface(&device.state.instance);
+    let buffer_size = size_of::<UniformBufferObject>() as u64;
 
-    let device = device
-        .with_default_phys_dev(&window.state.surface)
-        .with_default_queue_family(&window.state.surface)
+    let uniform_buffer = GPUBuffer::new(
+        &ctx.graphics_device.device.raw,
+        &ctx.graphics_device.phys_dev.phys_info.memory_prop,
+        buffer_size,
+        vk::BufferUsageFlags::UNIFORM_BUFFER,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+    ).unwrap();
+
+    let mut ubo = UniformBufferObject {
+        model: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.5, 0.0, 0.0, 1.0],
+        ],
+        view: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, -2.0, 1.0],
+        ],
+        projection: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, -2.0, 1.0],
+        ],
+    };
+
+    uniform_buffer.upload_data(&ctx.graphics_device.device.raw, &[ubo]);
+
+    let layout = DescriptorSetLayoutBuilder::new()
+        .with_device(ctx.graphics_device.raw_device())
+        .with_bindings(&[
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX)
+            ]
+        )
         .build();
 
-    let window = window
-        .with_default_format(&device.phys_dev)
-        .with_default_mode(&device.phys_dev)
-        .with_default_swapchain(&device.instance, &device.device);
+    let descriptor_pool = DescriptorPoolBuilder::new()
+        .with_device(ctx.graphics_device.raw_device())
+        .with_max_sets(1)
+        .with_pool_sizes(&[
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+        ])
+        .build();
 
-    // let pipeline = StandartGraphicsPipelineBuilder::new()
-    //     .with_fragment_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\ray-tracing-frag.spv"))
-    //     .with_vertex_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
-    //     .with_uniforms()
-    //     .build();
+    // Выделяем Descriptor Set
+    let layout = std::slice::from_ref(&layout.raw);
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
+        .descriptor_pool(descriptor_pool.raw)
+        .set_layouts(layout);
 
+    let descriptor_sets = unsafe {
+        ctx.graphics_device.device.raw
+            .allocate_descriptor_sets(&allocate_info)
+            .unwrap()
+    };
+
+    let descriptor_set = descriptor_sets[0];
+
+    let buffer_info = [vk::DescriptorBufferInfo::default()
+        .buffer(uniform_buffer.raw)
+        .offset(0)
+        .range(buffer_size)
+    ];
+
+    let write_descriptor = vk::WriteDescriptorSet::default()
+        .dst_set(descriptor_set)
+        .dst_binding(0)  // Как в layout_binding
+        .dst_array_element(0)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .buffer_info(&buffer_info);
+
+    unsafe {
+        ctx.graphics_device.device.raw
+            .update_descriptor_sets(&[write_descriptor], &[]);
+    }
+
+    let pipeline = StandartPipelineBuilder::new()
+        .with_graphics_device(&ctx)
+        .with_fragment_shader(load_spv(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-frag.spv"))
+        .with_vertex_shader(load_spv(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
+        .build(layout[0]);
 
     let mut data = _VERTICES_DATA.to_vec();
 
-    //-----------------------------
+    let command_pool = CommandPoolBuilder::new()
+        .device(&ctx.graphics_device.device.raw)
+        .family_index(ctx.graphics_device.universal_queue.graphics_index())
+        .build();
 
-    // let command_pool = CommandPoolBuilder::new()
-    //     .device(&device.raw)
-    //     .family_index(0)
-    //     .build();
+    let gpu_buffer = GPUBuffer::new(
+        &ctx.graphics_device.device.raw,
+        &ctx.graphics_device.phys_dev.phys_info.memory_prop,
+        (size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
+        BufferUsageFlags::VERTEX_BUFFER,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
+    ).unwrap();
 
-    // let present_images = swapchain.get_swapchain_images();
-    // info!("Количество изображений в Swapchain: {}", present_images.len());
+    gpu_buffer.upload_data(ctx.graphics_device.raw_device(), &data);
 
-    // let image_views = ImageViewBuilder::new()
-    //     .with_device(&device.raw)
-    //     .with_format(format)
-    //     .with_image_views(&present_images)
-    //     .build();
+    let mut graph = RenderGraph::new();
+    graph.register_command_pool("pool", command_pool);
+    graph.register_buffer("buf", gpu_buffer);
+    graph.register_pipeline("pipe", pipeline);
 
-    // info!("Количество Image Views на буфер: {}", image_views.raw.len());
-    // let shader = ShaderProgramBuilder::new()
-    //     .with_device(&device.raw)
-    //     .with_fragment_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\ray-tracing-frag.spv"))
-    //     .with_vertex_shader(load_from_file(r"C:\Users\Oleja\Desktop\d\fujiya\shared\shaders\spv\triangle-vert.spv"))
-    //     .build();
+    let gpu_buffer2 = GPUBuffer::new(
+        &ctx.graphics_device.raw_device(),
+        &ctx.graphics_device.phys_dev.phys_info.memory_prop,
+        (size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
+        BufferUsageFlags::VERTEX_BUFFER,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
+    ).unwrap();
 
-    // let subpass = SubpassBuilder::new()
-    //     .add_color_attachment_ref(
-    //         AttachmentReference::default()
-    //             .attachment(0)
-    //             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-    //     )
-    //     .with_bind_point(vk::PipelineBindPoint::GRAPHICS)
-    //     .build();
+    for i in &mut data {
+        i.pos[0] += 0.5;
+    }
 
-    // let render_pass = RenderPassBuilder::new()
-    //     .with_device(&device.raw)
-    //     .add_subpass(subpass.raw)
-    //     .add_subpass_dependency(
-    //         vk::SubpassDependency {
-    //             src_subpass: vk::SUBPASS_EXTERNAL,
-    //             src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-    //             dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-    //             dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-    //             ..Default::default()
-    //         })
-    //     .add_attachments_desc(vk::AttachmentDescription {
-    //             format: format,
-    //             samples: vk::SampleCountFlags::TYPE_1,
-    //             load_op: vk::AttachmentLoadOp::CLEAR,
-    //             store_op: vk::AttachmentStoreOp::STORE,
-    //             final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-    //             ..Default::default()
-    //         })
-    //     .build();
+    gpu_buffer2.upload_data(ctx.graphics_device.raw_device(), &data);
+    graph.register_buffer("buf2", gpu_buffer2);
 
-    // let buffer = GPUBuffer::new(
-    //     &device.raw,
-    //     &phys_dev.phys_info.memory_prop,
-    //     (size_of::<Vertex>() * _VERTICES_DATA.len()) as u64,
-    //     BufferUsageFlags::VERTEX_BUFFER,
-    //     vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
-    // ).unwrap();
 
-    // let binding_description = Vertex::get_binding_descriptions();
-    // let attribute_description = Vertex::get_attribute_descriptions();
+    graph.add_raw_pass("Simple", |res, ctx, image_index| {
 
-    // let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-    //     .vertex_attribute_descriptions(&attribute_description)
-    //     .vertex_binding_descriptions(&binding_description);
+        let device = ctx.graphics_device.raw_device();
+        let buffer = res.buffers.get("buf").ok_or("ERR")?;
+        let buffer2 = res.buffers.get("buf2").ok_or("ERR")?;
+        let pipeline = res.pipeline.get("pipe").ok_or("ERR")?;
+        let command_pool = res.command_pool.get("pool").ok_or("ERR")?;
+        let command_buffer = command_pool.create_command_buffers(device, 1, CommandBufferLevel::PRIMARY)[0];
+        let render_pass = &ctx.window_manager.render_pass;
+        let current_extent = ctx.window_manager.caps.current_extent;
 
-    // let pipeline = RenderPipelineBuilder::new()
-    //     .with_vertex_shader(shader.vertex_shader)
-    //     .with_fragment_shader(shader.fragment_shader)
-    //     .with_resolution(extent)
-    //     .with_format(format)
-    //     .with_vertex_input_info(vertex_input_state_info)
-    //     .with_input_assembly_info(
-    //         vk::PipelineInputAssemblyStateCreateInfo::default()
-    //                     .topology(PrimitiveTopology::TRIANGLE_STRIP)
-    //                     .primitive_restart_enable(false)
-    //     )
-    //     .with_render_pass(&render_pass.raw)
-    //     .with_device(&device.raw)
-    //     .build();
+        let frame_buffer = ctx.window_manager.frame_buffers.raw[image_index as usize];
 
-    // let framebuffers = FrameBufferBuilder::new()
-    //     .device(&device.raw)
-    //     .image_views(&image_views.raw)
-    //     .resolution(caps.current_extent)
-    //     .render_pass(&render_pass.raw)
-    //     .build();
+        let clear_values = [vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+        }];
 
-    // info!("Количество FrameBuffers: {}", framebuffers.frame_buffers.len());
+        let render_pass_begin_info = vk::RenderPassBeginInfo::default()
+            .render_pass(render_pass.raw)
+            .framebuffer(frame_buffer)
+            .render_area(vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: current_extent,
+            })
+            .clear_values(&clear_values);
 
-    // //enumerate_sound_device();
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
 
-    // let (image_available_semaphore, render_finished_semaphore) = create_semaphores(&device.raw);
-    // let fence_info = vk::FenceCreateInfo::default()
-    //     .flags(FenceCreateFlags::SIGNALED);
+        unsafe {
 
-    // let fence = unsafe { device.raw.create_fence(&fence_info, None).unwrap() };
+            device.begin_command_buffer(command_buffer, &begin_info)
+                .expect("Failed to begin command buffer");
 
-    let _ = main_loop.run(|ev, ev_window| {
+            device.cmd_begin_render_pass(
+                command_buffer,
+                &render_pass_begin_info,
+                vk::SubpassContents::INLINE,
+            );
+
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.raw,
+            );
+
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[buffer.raw], &[0]);
+            device.cmd_draw(command_buffer, 3, 1, 0, 0);
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[buffer2.raw], &[0]);
+            device.cmd_draw(command_buffer, 3, 1, 0, 0);
+            device.cmd_end_render_pass(command_buffer);
+
+            device.end_command_buffer(command_buffer)
+                .expect("Failed to end command buffer");
+
+        }
+
+        res.command_buffers.push(command_buffer);
+
+        Ok(())
+    });
+
+
+
+    let _ = main_loop.run(move |ev, ev_window| {
     match ev {
         winit::event::Event::WindowEvent { window_id: _, event } => match event {
             winit::event::WindowEvent::KeyboardInput { event, .. } => {
@@ -329,35 +285,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             winit::event::WindowEvent::CloseRequested => ev_window.exit(),
             winit::event::WindowEvent::RedrawRequested => {
-
-                // for i in &mut data {
-                //     i.pos[0] += 0.001;
-                //     i.pos[1] -= 0.001;
-                // }
-
-                // buffer.upload_data(&device.raw, &data);
-
-                // let _ = draw_frame(
-                //     &device.raw,
-                //     &queue.raw[0][0],
-                //     &swapchain,
-                //     &command_pool,
-                //     &buffer.buffer,
-                //     &pipeline.raw,
-                //     &render_pass,
-                //     &framebuffers.frame_buffers,
-                //     image_available_semaphore,
-                //     render_finished_semaphore,
-                //     fence
-                // );
-            }
+                graph.execute(&ctx);
+            },
             winit::event::WindowEvent::Resized(_) => {
 
-            }
+            },
             _ => {}
         },
         winit::event::Event::AboutToWait => {
-            //window.request_redraw();
+            ctx.window_manager.window.request_redraw();
         }
         _ => {}
     }

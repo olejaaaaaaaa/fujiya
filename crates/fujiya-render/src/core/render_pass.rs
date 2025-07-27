@@ -1,6 +1,4 @@
-use ash::vk::{
-    AccessFlags, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, Format, ImageLayout, PipelineBindPoint, PipelineStageFlags, RenderPassCreateInfo, SampleCountFlags, SubgroupFeatureFlags, SubpassDescriptionFlags, SUBPASS_EXTERNAL
-};
+use ash::vk::*;
 
 pub struct RenderPass {
     pub raw: ash::vk::RenderPass

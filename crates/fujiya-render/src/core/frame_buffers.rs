@@ -6,7 +6,9 @@ pub struct FrameBufferBuilder<'n> {
     resolution: Option<Extent2D>,
     render_pass: Option<&'n RenderPass>,
     image_views: Option<&'n Vec<ImageView>>,
-    device: Option<&'n ash::Device>
+    device: Option<&'n ash::Device>,
+    #[allow(dead_code)]
+    allocation: ()
 }
 
 impl<'n> FrameBufferBuilder<'n> {
@@ -36,6 +38,12 @@ impl<'n> FrameBufferBuilder<'n> {
 
     pub fn build(self) -> FrameBuffers {
 
+        let device = self.device.expect("Device is missing");
+        let resolution = self.resolution.expect("Resolution is missing");
+        let render_pass = self.render_pass.expect("Render Pass is missing");
+
+        log::info!("{:?}", resolution);
+
         let mut frame_buffers = vec![];
 
         unsafe {
@@ -47,22 +55,22 @@ impl<'n> FrameBufferBuilder<'n> {
                 let create_info = ash::vk::FramebufferCreateInfo::default()
                     .attachments(&image_view)
                     .attachment_count(1)
-                    .width(self.resolution.unwrap().width)
-                    .height(self.resolution.unwrap().height)
+                    .width(resolution.width)
+                    .height(resolution.height)
                     .layers(1)
-                    .render_pass(*self.render_pass.unwrap());
+                    .render_pass(*render_pass);
 
-                let frame = self.device.unwrap().create_framebuffer(&create_info, None).unwrap();
+                let frame = device.create_framebuffer(&create_info, None).unwrap();
                 frame_buffers.push(frame);
             }
 
 
-            FrameBuffers { frame_buffers }
+            FrameBuffers { raw: frame_buffers }
         }
 
     }
 }
 
 pub struct FrameBuffers {
-    pub frame_buffers: Vec<ash::vk::Framebuffer>
+    pub raw: Vec<ash::vk::Framebuffer>
 }

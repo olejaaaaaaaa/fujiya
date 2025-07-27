@@ -1,4 +1,4 @@
-use cpal::{traits::{DeviceTrait, HostTrait}, *};
+use cpal::{traits::{DeviceTrait, HostTrait}};
 
 pub fn enumerate_sound_device() {
 

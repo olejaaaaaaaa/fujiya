@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use crate::{core::Instance, Surface, SurfaceBuilder, WindowManagerBuilder};
 use winit::{raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::Window};
 use super::WithWindow;
